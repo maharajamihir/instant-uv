@@ -13,6 +13,8 @@ Instant-NGP [2] (their gigapixel image part). Related work that learns texture o
 [3, 4, 1], but ours would be way more efficient, and it would be interesting to see if reducing the
 problem to a 2D learning task solves it more effectively.
 
+
+
 [1] Lukas Koestler, Daniel Grittner, Michael Moeller, Daniel Cremers, and Zorah Lähner. Intrinsic
 neural fields: Learning functions on manifolds. In European Conference on Computer Vision,
 pages 622–639. Springer, 2022. 
