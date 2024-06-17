@@ -1,0 +1,3 @@
+libigl
+fast-simplification
+robust-laplacian

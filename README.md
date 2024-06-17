@@ -13,7 +13,39 @@ Instant-NGP [2] (their gigapixel image part). Related work that learns texture o
 [3, 4, 1], but ours would be way more efficient, and it would be interesting to see if reducing the
 problem to a 2D learning task solves it more effectively.
 
+# Work with InstantUV
+
+## Download the data
+```bash
+./data/download_data.sh
+```
+
+## Preprocess the data
+
+```bash
+python src/data/preprocess_dataset.py
+```
+
+
+# Notes
+## Pipeline 
+
+We have the untextured 3d object as a mesh and we multiview images of our object (colored).
+
+(mesh, images) -> (3d coordinates, rgb value) -> 
+
+-> 3d coordinate -> unwrap mesh into UV coordinates -> (3d coords, 2d coordinates, rgb values)
+ 
+ f(3d coordinate) = rgb value
+
+ h(3d coordinate) = 2d coodinate
+ g(2d coodinate) = rgb value
+
+ g(h(x)) = f(x)
+
 <hr/>
+
+### References
 
 [1] Lukas Koestler, Daniel Grittner, Michael Moeller, Daniel Cremers, and Zorah Lähner. Intrinsic
 neural fields: Learning functions on manifolds. In European Conference on Computer Vision,
