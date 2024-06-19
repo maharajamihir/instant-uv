@@ -14,7 +14,7 @@ from util.utils import load_obj_mask_as_tensor, load_cameras, load_config
 def parse_args():
     parser = argparse.ArgumentParser(description="Preprocess the dataset")
     parser.add_argument("--config_path", type=str)
-    parser.add_argument("--split", type=str, help="Dataset split [train, val, test]")
+    parser.add_argument("--split", type=str, choices=['train', 'val', 'test'], help="Dataset split [train, val, test]")
     args = parser.parse_args()
     return args
 

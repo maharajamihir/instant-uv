@@ -9,8 +9,6 @@ import trimesh
 import os
 import gc
 import scipy as sp
-import fast_simplification
-import robust_laplacian
 import warnings
 warnings.filterwarnings('ignore')
 

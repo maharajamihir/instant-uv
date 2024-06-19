@@ -10,7 +10,7 @@ data:
   mesh_path: data/raw/cat_rescaled_rotated/12221_Cat_v1_l3.obj
   img_height: 512
   img_width: 512
-  data_split: config/experiments/cat/data_split.yaml
+  data_split: config/cat/data_split.yaml
 
   train_render_img_names:
     - cat000

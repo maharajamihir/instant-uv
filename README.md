@@ -15,16 +15,38 @@ problem to a 2D learning task solves it more effectively.
 
 # Work with InstantUV
 
+## Install packages
+
+```bash
+# I have tested it with python=3.9, but might also work with newer version
+conda create -n instantuv python=3.9
+conda activate instantuv
+```
+
+```bash
+pip install -r requirements.txt
+pip install pyembree # not sure why this fails when downloading through requirements.txt
+```
+
 ## Download the data
+The data will be downloaded under `data/raw`. Please don't change its download location, as the preprocessing script will pick it up from there. 
 ```bash
 ./data/download_data.sh
 ```
 
 ## Preprocess the data
-
+Preprocess the data by performing ray-mesh intersection given the images and the mesh object. Here we separately preprocess train, val and test data, for which we defined the split beforehand. The following command preprocesses the data for the human object for the train split. Note, that we dont need to preprocess the test dataset, since we run our evaluations on rendered images directly.
 ```bash
-python src/data/preprocess_dataset.py
+python src/data/preprocess_dataset.py --config_path config/human/config_human.yaml --split train
 ```
+Tipp: Run the preprocessing with the [`nice`](https://man7.org/linux/man-pages/man2/nice.2.html) command, since it is very cpu intensive and your laptop might crash. 
+
+
+## Train model
+
+## Visualize
+
+## Run experiments
 
 
 # Notes

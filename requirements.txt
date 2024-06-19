@@ -1,3 +1,24 @@
+trimesh[all]
+numpy
+pandas
+tabulate
+lpips
+matplotlib
+Pillow
+torch 
+torchvision
+torchaudio
+torchinfo
+scikit-image
+scikit-learn
+imageio
+tqdm
 libigl
-fast-simplification
-robust-laplacian
+# pyembree
+opencv-python
+pyyaml
+torchinfo==1.5.4
+pyarrow
+# tensorboard # optional if you want to work with tensorboard
+# hydra-core 
+# omegaconf
