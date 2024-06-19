@@ -223,6 +223,8 @@ class MeshViewPreProcessor:
 
     def _ray_mesh_intersect(self, ray_origins, ray_directions, return_depth=False, camCv2world=None):
 
+        # TODO instead of doing simple ray mesh intersection, we are interested in the x,y,z coordinates 
+        # TODO change to ray_tracing_xyz and retrieve x,y,z coordinates
         return ray_mesh_intersect(self.ray_mesh_intersector, 
                                   self.mesh, 
                                   ray_origins, 
@@ -253,6 +255,24 @@ class MeshViewPreProcessor:
         # Then, we can compute the ray-mesh-intersections
         vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs = self._ray_mesh_intersect(ray_origins, unit_ray_dirs)
 
+        """
+        TODO use the retrieved values from ray mesh intersection to obtain our preferred dataset format
+
+        We have:
+            - Face IDs for each hit face
+            - Barycentric coordinates for each hitpoint
+            - Vertex IDs of each vertex of each hit face
+            - RGB values for each point
+        We want:
+            - 3D coodinates 
+            - 2D coordinates (which can be bijectively mapped to the 3D coordinates)
+            - [DONE] RGB values for each point 
+
+        The idea here is to 
+            - Use the ray_tracing_xyz function to retrieve 3D coordinates
+            - Use the map_to_UV function from `utils/utils.py` to obtain a 2D points
+
+        """
         
 
         # Choose the correct GTs and viewing directions for the hits.

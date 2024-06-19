@@ -59,9 +59,8 @@ def load_mesh(path):
     # using libigl and then convert the loaded mesh into a Trimesh object.
     v, f = igl.read_triangle_mesh(path)
     mesh = trimesh.Trimesh(vertices=v, faces=f, process=False, maintain_order=True)
-    # assert mesh.is_watertight and (v == mesh.vertices).all() and (f == mesh.faces).all()
+
     assert np.array_equal(v, mesh.vertices) and np.array_equal(f, mesh.faces)
-    # mesh.export("meshes/loaded.ply")
     return mesh
 
 
@@ -201,23 +200,6 @@ def to_device(x, *, device):
 
 ##########################################################################################
     
-class LossWithGammaCorrection(torch.nn.Module):
-    def __init__(self, loss_type='L1'):
-        super().__init__()
-
-        if loss_type == 'L1':
-            self.criterion = torch.nn.L1Loss()
-        elif loss_type == 'MSE':
-            self.criterion = torch.nn.MSELoss()
-        else:
-            raise ValueError("Unknown loss_type. Must be 'L1' or 'MSE'")
-
-    def forward(self, x, y):
-        x = linear2sRGB(x)
-        y = linear2sRGB(y)
-
-        return self.criterion(x, y)
-
 
 def linear2sRGB(linear, eps=None):
     """
@@ -297,7 +279,7 @@ class Metrics:
 def time_method(model, dummy_input, repetitions=300):
     """
     Model and dummy_input must be on the target device
-    dummy_input must be sucht that model(**dummy_input) can be evaluated
+    dummy_input must be such that model(**dummy_input) can be evaluated
     Taken from here: https://deci.ai/blog/measure-inference-time-deep-neural-networks/
     """
 
@@ -324,3 +306,52 @@ def time_method(model, dummy_input, repetitions=300):
         mean_eval_time = np.sum(timings) / repetitions
 
     return mean_eval_time
+
+
+#################################################
+
+def get_mapping(mesh):
+    """
+    TODO: Implement the function to unwrap the mesh and return the mapping for UV coordinates.
+
+    This function is supposed to unwrap the mesh using an appropriate library (e.g., xatlas-python)
+    and return the mapping. The mapping can then be stored and later used in the `map_to_UV` function.
+
+    Args:
+        mesh: The mesh object to be unwrapped. This could be in a format compatible with the chosen 
+              unwrapping library, such as a Trimesh object.
+
+    Returns:
+        mapping: The UV mapping of the mesh. This could be a data structure that associates each vertex or 
+                 face of the mesh with its corresponding UV coordinates. Preferably, the mapping should be 
+                 in a format that can be easily used in the `map_to_UV` function.
+    """
+    # TODO: Implement the unwrapping logic here
+
+    return None  # Default return value
+
+
+
+
+def map_to_UV(point_xyz, mapping):
+    """
+    TODO: Implement the function to map 3D points (point_xyz) to 2D UV coordinates.
+
+    This function should take a 3D point or a list of 3D points represented in 
+    Cartesian coordinates (x, y, z) and map them to 2D UV coordinates. The exact 
+    transformation will depend on the specifics of the UV mapping, which might 
+    involve perspective projection, orthographic projection, or another method 
+    suited to the particular application.
+
+    Args:
+        point_xyz (tuple or list of tuples): A tuple (x, y, z) representing a 3D point or a list of such tuples. 
+        Preferably torch tensors or numpy arrays!
+        mapping (TODO define): The mapping in some way. Might be a function or an array or so that maps xyz points to 2d coordinates. Need to check how we implement this
+
+    Returns:
+        tuple or list of tuples: A tuple (u, v) representing the 2D UV coordinates or a list of such tuples. 
+        Return torch tensors if possible
+    """
+    # TODO: Implement the mapping logic here
+
+    return (0, 0)  # Default return value
