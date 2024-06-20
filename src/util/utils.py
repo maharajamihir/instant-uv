@@ -130,14 +130,6 @@ def get_loss_fn(loss_type):
         raise NotImplementedError(f"Loss type {loss_type} not implemented")
 
 
-def get_combine_res_fn(combine_res_type):
-    if combine_res_type == "cat":
-        return torch.cat
-    elif combine_res_type == "sum":
-        return torch.sum
-    else:
-        raise NotImplementedError(f"Combine res type {combine_res_type} not implemented")
-
 ##########################################################################################
 # The following is taken from:
 # https://github.com/tum-vision/tandem/blob/master/cva_mvsnet/utils.py
@@ -199,19 +191,6 @@ def to_device(x, *, device):
         raise NotImplementedError(f"Invalid type for to_device: {type(x)}")
 
 ##########################################################################################
-    
-
-def linear2sRGB(linear, eps=None):
-    """
-    Assumes `linear` is in [0, 1], see https://en.wikipedia.org/wiki/SRGB.
-    From https://github.com/google-research/multinerf/blob/5d4c82831a9b94a87efada2eee6a993d530c4226/internal/image.py#L48
-    """
-    if eps is None:
-        eps = torch.tensor(torch.finfo(torch.float32).eps)
-
-    srgb0 = 323 / 25 * linear
-    srgb1 = (211 * torch.maximum(eps, linear)**(5 / 12) - 11) / 200
-    return torch.where(linear <= 0.0031308, srgb0, srgb1)
 
 
 def compute_psnr(x, y):

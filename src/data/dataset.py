@@ -11,6 +11,7 @@ class InstantUVDataset(Dataset):
         points_xyz (tensor, optional): Tensor containing 3D point coordinates. Default is None.
     """
     def __init__(self, uv, rgb, points_xyz=None):
+        # points_xyz are optional because we don't really need them for training.
         self.uv = uv
         self.rgb = rgb
         self.points_xyz = points_xyz
