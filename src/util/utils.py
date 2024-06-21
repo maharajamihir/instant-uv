@@ -22,9 +22,10 @@ except FileExistsError:
     # Ignore
     pass
 
+
 def load_preprocessed_data(preproc_data_path):
     data = {}
-    
+
     vertex_idxs_of_hit_faces = np.load(os.path.join(preproc_data_path, "vids_of_hit_faces.npy"))
     data["vertex_idxs_of_hit_faces"] = torch.from_numpy(vertex_idxs_of_hit_faces).to(dtype=torch.int64)
 
@@ -33,7 +34,7 @@ def load_preprocessed_data(preproc_data_path):
 
     expected_rgbs = np.load(os.path.join(preproc_data_path, "expected_rgbs.npy"))
     data["expected_rgbs"] = torch.from_numpy(expected_rgbs).to(dtype=torch.float32)
-    
+
     unit_ray_dirs_path = os.path.join(preproc_data_path, "unit_ray_dirs.npy")
     face_idxs_path = os.path.join(preproc_data_path, "face_idxs.npy")
     if os.path.exists(unit_ray_dirs_path) and os.path.exists(face_idxs_path):
@@ -42,16 +43,18 @@ def load_preprocessed_data(preproc_data_path):
 
         face_idxs = np.load(face_idxs_path)
         data["face_idxs"] = torch.from_numpy(face_idxs).to(dtype=torch.int64)
-    
+
     return data
+
 
 def tensor_mem_size_in_bytes(x):
     return sys.getsizeof(x.untyped_storage())
 
 
 def load_trained_model(weights_path, device):
-    model=torch.load(weights_path)
+    model = torch.load(weights_path)
     return model
+
 
 def load_mesh(path):
     # Note: We load using libigl because trimesh does some unwanted preprocessing and vertex
@@ -115,10 +118,12 @@ def batchify_dict_data(data_dict, input_total_size, batch_size):
         batches.append(data)
     return batches
 
+
 def load_config(path):
     with open(path, "r") as f:
         config = yaml.safe_load(f)
     return config
+
 
 def get_loss_fn(loss_type):
     # L1 loss
@@ -128,6 +133,15 @@ def get_loss_fn(loss_type):
         return nn.MSELoss()
     else:
         raise NotImplementedError(f"Loss type {loss_type} not implemented")
+
+
+def get_combine_res_fn(combine_res_type):
+    if combine_res_type == "cat":
+        return torch.cat
+    elif combine_res_type == "sum":
+        return torch.sum
+    else:
+        raise NotImplementedError(f"Combine res type {combine_res_type} not implemented")
 
 
 ##########################################################################################
@@ -190,7 +204,31 @@ def to_device(x, *, device):
     else:
         raise NotImplementedError(f"Invalid type for to_device: {type(x)}")
 
+
 ##########################################################################################
+
+class LossWithGammaCorrection(torch.nn.Module):
+    def __init__(self, loss_type='L1'):
+        super().__init__()
+
+    def forward(self, x, y):
+        x = linear2sRGB(x)
+        y = linear2sRGB(y)
+
+        return self.criterion(x, y)
+
+
+def linear2sRGB(linear, eps=None):
+    """
+    Assumes `linear` is in [0, 1], see https://en.wikipedia.org/wiki/SRGB.
+    From https://github.com/google-research/multinerf/blob/5d4c82831a9b94a87efada2eee6a993d530c4226/internal/image.py#L48
+    """
+    if eps is None:
+        eps = torch.tensor(torch.finfo(torch.float32).eps)
+
+    srgb0 = 323 / 25 * linear
+    srgb1 = (211 * torch.maximum(eps, linear) ** (5 / 12) - 11) / 200
+    return torch.where(linear <= 0.0031308, srgb0, srgb1)
 
 
 def compute_psnr(x, y):
@@ -208,13 +246,13 @@ def compute_ssim(x, y):
         sigma=1.5,
         data_range=1.0,
         channel_axis=2
-        )
+    )
     return ssim_val
 
 
 class Metrics:
     def __init__(self):
-        self.lpips_eval = lpips.LPIPS(net='alex', version='0.1')        
+        self.lpips_eval = lpips.LPIPS(net='alex', version='0.1')
 
     def compute_metrics(self, renderings):
         # ######### Compute psnr and ssim
@@ -224,10 +262,10 @@ class Metrics:
 
         # Loop over images
         for im_linear, im_gt_linear, im_srgb, im_gt_srgb in zip(
-            renderings['images_linear'],
-            renderings['images_gt_linear'],
-            renderings['images_srgb'],
-            renderings['images_gt_srgb']
+                renderings['images_linear'],
+                renderings['images_gt_linear'],
+                renderings['images_srgb'],
+                renderings['images_gt_srgb']
         ):
             psnrs_linear.append(compute_psnr(im_linear.numpy(), im_gt_linear.numpy()))
             psnrs_srgb.append(compute_psnr(im_srgb.numpy(), im_gt_srgb.numpy()))
@@ -254,7 +292,6 @@ class Metrics:
         return result
 
 
-
 def time_method(model, dummy_input, repetitions=300):
     """
     Model and dummy_input must be on the target device
@@ -266,8 +303,8 @@ def time_method(model, dummy_input, repetitions=300):
     with torch.no_grad():
         # INIT LOGGERS
         starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-        timings=np.zeros((repetitions,1))
-        #GPU-WARM-UP
+        timings = np.zeros((repetitions, 1))
+        # GPU-WARM-UP
         for _ in range(10):
             tmp_out = model(**dummy_input)
 
@@ -297,12 +334,12 @@ def get_mapping(mesh):
     and return the mapping. The mapping can then be stored and later used in the `map_to_UV` function.
 
     Args:
-        mesh: The mesh object to be unwrapped. This could be in a format compatible with the chosen 
+        mesh: The mesh object to be unwrapped. This could be in a format compatible with the chosen
               unwrapping library, such as a Trimesh object.
 
     Returns:
-        mapping: The UV mapping of the mesh. This could be a data structure that associates each vertex or 
-                 face of the mesh with its corresponding UV coordinates. Preferably, the mapping should be 
+        mapping: The UV mapping of the mesh. This could be a data structure that associates each vertex or
+                 face of the mesh with its corresponding UV coordinates. Preferably, the mapping should be
                  in a format that can be easily used in the `map_to_UV` function.
     """
     # TODO: Implement the unwrapping logic here
@@ -310,25 +347,23 @@ def get_mapping(mesh):
     return None  # Default return value
 
 
-
-
 def map_to_UV(point_xyz, mapping):
     """
     TODO: Implement the function to map 3D points (point_xyz) to 2D UV coordinates.
 
-    This function should take a 3D point or a list of 3D points represented in 
-    Cartesian coordinates (x, y, z) and map them to 2D UV coordinates. The exact 
-    transformation will depend on the specifics of the UV mapping, which might 
-    involve perspective projection, orthographic projection, or another method 
+    This function should take a 3D point or a list of 3D points represented in
+    Cartesian coordinates (x, y, z) and map them to 2D UV coordinates. The exact
+    transformation will depend on the specifics of the UV mapping, which might
+    involve perspective projection, orthographic projection, or another method
     suited to the particular application.
 
     Args:
-        point_xyz (tuple or list of tuples): A tuple (x, y, z) representing a 3D point or a list of such tuples. 
+        point_xyz (tuple or list of tuples): A tuple (x, y, z) representing a 3D point or a list of such tuples.
         Preferably torch tensors or numpy arrays!
         mapping (TODO define): The mapping in some way. Might be a function or an array or so that maps xyz points to 2d coordinates. Need to check how we implement this
 
     Returns:
-        tuple or list of tuples: A tuple (u, v) representing the 2D UV coordinates or a list of such tuples. 
+        tuple or list of tuples: A tuple (u, v) representing the 2D UV coordinates or a list of such tuples.
         Return torch tensors if possible
     """
     # TODO: Implement the mapping logic here

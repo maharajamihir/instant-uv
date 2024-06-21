@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+
 class InstantUVDataset(Dataset):
     """
     Dataset class for handling UV, RGB, and optional 3D point data.
@@ -10,6 +11,7 @@ class InstantUVDataset(Dataset):
         rgb (tensor): Tensor containing RGB values.
         points_xyz (tensor, optional): Tensor containing 3D point coordinates. Default is None.
     """
+
     def __init__(self, uv, rgb, points_xyz=None):
         # points_xyz are optional because we don't really need them for training.
         self.uv = uv
@@ -44,6 +46,7 @@ class InstantUVDataset(Dataset):
             sample['xyz'] = self.points_xyz[idx]
         return sample
 
+
 class InstantUVDataLoader(DataLoader):
     """
     DataLoader class for batching and shuffling dataset samples.
@@ -53,7 +56,9 @@ class InstantUVDataLoader(DataLoader):
         batch_size (int): Number of samples per batch.
         shuffle (bool, optional): Whether to shuffle the data at every epoch. Default is True.
     """
-    def __init__(self, dataset, batch_size, shuffle=True):
+
+    def __init__(self, dataset: InstantUVDataset, batch_size, shuffle=True):
+        super().__init__(dataset, batch_size, shuffle)
         self.dataset = dataset
         self.batch_size = batch_size
         self.shuffle = shuffle

@@ -1,20 +1,27 @@
 import os
+from pathlib import Path
+
 import numpy as np
 import torch
 import argparse
 from tqdm import tqdm
 import imageio.v2 as imageio
 import sys
-sys.path.append("src/")
+
+sys.path.append(str(Path(__file__).parent.parent))
 
 from util.mesh import MeshViewPreProcessor
 from util.utils import load_obj_mask_as_tensor, load_cameras, load_config
 
+os.chdir(Path(__file__).parent.parent.parent)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Preprocess the dataset")
-    parser.add_argument("--config_path", type=str)
-    parser.add_argument("--split", type=str, choices=['train', 'val', 'test'], help="Dataset split [train, val, test]")
+    parser.add_argument("--config_path", type=str,
+                        default=Path(__file__).parent.parent.parent / "config/human/config_human.yaml")
+    parser.add_argument("--split", type=str, choices=['train', 'val', 'test'],
+                        help="Dataset split [train, val, test]", default="train")
     args = parser.parse_args()
     return args
 
@@ -43,11 +50,11 @@ def preprocess_views(mesh_view_pre_proc, mesh_views_list_train, dataset_path):
         img = torch.from_numpy(img).to(dtype=torch.float32)
         img /= 255.
 
-
         # Preprocess and cache the current view
         mesh_view_pre_proc.cache_single_view(camCv2world, K, obj_mask, img)
 
     mesh_view_pre_proc.write_to_disk()
+
 
 def preprocess_dataset(split, dataset_path, path_to_mesh, out_dir, mesh_views_list_train, check_depth=False):
     """
@@ -63,7 +70,7 @@ def preprocess_dataset(split, dataset_path, path_to_mesh, out_dir, mesh_views_li
     split_out_dir = os.path.join(out_dir, split)
 
     # if os.path.exists(split_out_dir):
-        # raise RuntimeError(f"Error: You are trying to overwrite the following directory: {split_out_dir}")
+    # raise RuntimeError(f"Error: You are trying to overwrite the following directory: {split_out_dir}")
     os.makedirs(split_out_dir, exist_ok=True)
 
     mesh_view_pre_proc = MeshViewPreProcessor(path_to_mesh, split_out_dir)
@@ -80,13 +87,21 @@ def main():
     data_split = load_config(config["data"]["data_split"])
     mesh_views_list_train = data_split[f"mesh_views_list_{args.split}"]
 
+    if "all" in mesh_views_list_train:
+        # NOTE:
+        # This is for debugging only. TODO: Delete this later again
+
+        # Quick and dirty way to select all strings that look like humanXXX
+        mesh_views_list_train = [f for f in os.listdir("src/data/raw/human_dataset_v2_tiny/") if len(f) == 8 and
+                                 "human" in f]
     print(f"Preprocessing dataset: {args.split}")
-    preprocess_dataset(split=args.split, 
-                       dataset_path=dataset_path, 
-                       path_to_mesh=mesh_path, 
-                       out_dir=out_dir, 
-                       mesh_views_list_train=mesh_views_list_train
-                       )
+    preprocess_dataset(
+        split=args.split,
+        dataset_path=dataset_path,
+        path_to_mesh=mesh_path,
+        out_dir=out_dir,
+        mesh_views_list_train=mesh_views_list_train
+    )
 
 
 if __name__ == "__main__":

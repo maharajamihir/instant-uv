@@ -5,9 +5,9 @@ experiment:
   split: human
   description: Default Config for human
 data:
-  raw_data_path: data/raw/human_dataset_v2_tiny/
-  preproc_data_path: data/preprocessed/human_dataset_v2_tiny/
-  mesh_path: data/raw/human/RUST_3d_Low1.obj
+  raw_data_path: src/data/raw/human_dataset_v2_tiny/
+  preproc_data_path: src/data/preprocessed/human_dataset_v2_tiny/
+  mesh_path: src/data/raw/human/RUST_3d_Low1.obj
   img_height: 512
   img_width: 512
   data_split: config/human/data_split.yaml

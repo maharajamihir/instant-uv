@@ -22,3 +22,5 @@ pyarrow
 # tensorboard # optional if you want to work with tensorboard
 # hydra-core 
 # omegaconf
+
+xatlas
