@@ -408,6 +408,4 @@ def map_to_UV(point_barys, face_vids, texture_visual):
     # Note: we can simply use the same barycentric coords since its all linear
     uv_coords = np.sum(point_barys[:, :, np.newaxis] * uv_vertices_of_hit_faces, axis=1)
 
-
-
     return uv_coords
