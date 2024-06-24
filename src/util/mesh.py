@@ -11,6 +11,7 @@ import gc
 import scipy as sp
 import warnings
 warnings.filterwarnings('ignore')
+from PIL.Image import fromarray
 
 from util.cameras import undistort_pixels_meshroom_radial_k3, DistortionTypes
 from util.utils import tensor_mem_size_in_bytes, load_mesh, map_to_UV, get_mapping
@@ -280,6 +281,36 @@ class MeshViewPreProcessor:
         # get uv coordinates
         mapping = get_mapping(self.mesh, self.config)
         uv_coords = map_to_UV(barycentric_coords, vertex_idxs_of_hit_faces, mapping)
+
+        #########################################################
+        #print(uv_coords.shape)
+        # breakpoint()
+        uv_coords = np.clip(uv_coords, 0, 1)
+
+        # Convert UV coordinates to pixel positions
+        image_width = 512 #1024  # Adjust as needed
+        image_height = 512 #1024  # Adjust as needed
+
+        pixel_x = (uv_coords[:, 0] * (image_width - 1)).astype(np.int32)
+        pixel_y = (uv_coords[:, 1] * (image_height - 1)).astype(np.int32)
+
+        # Create an empty image
+        image = np.zeros((image_height, image_width, 3), dtype=np.uint8)
+
+        # Populate the image with the RGB values
+        for i in range(len(expected_rgbs)):
+            x = pixel_x[i]
+            y = pixel_y[i]
+            image[y, x] = (expected_rgbs[i] * 255).astype(np.uint8)  # Convert RGB to 0-255 range
+
+        # Convert numpy array to PIL image
+        image_pil = fromarray(image)
+
+        # Save the image
+        image_pil.save('uv_image.png')
+        #####################################################
+
+
 
         # Choose the correct GTs and viewing directions for the hits.
         num_hits = hit_ray_idxs.size()[0]

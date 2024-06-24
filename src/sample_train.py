@@ -19,6 +19,7 @@ from trimesh import visual
 from data.dataset import InstantUVDataset
 from util.utils import load_mesh
 
+os.environ['PYOPENGL_PLATFORM'] = 'egl'
 # Append src/
 sys.path.append(str(Path(__file__).parent))
 
@@ -30,7 +31,8 @@ SCRIPTS_DIR = str(Path(__file__).parent / "tiny-cuda-nn/scripts")
 sys.path.append(SCRIPTS_DIR)
 
 try:
-    import tinycudann as tcnn
+    # import tinycudann as tcnn
+    print("starting...")
 except ImportError:
     print("This sample requires the tiny-cuda-nn extension for PyTorch.")
     print("You can install it by running:")
@@ -42,7 +44,7 @@ except ImportError:
 
 from common import read_image, write_image, ROOT_DIR
 
-DATA_DIR = os.path.join(ROOT_DIR, "data")
+DATA_DIR = os.path.join("data")
 IMAGES_DIR = os.path.join(DATA_DIR, "images")
 
 
@@ -132,7 +134,7 @@ if __name__ == "__main__":
     vertices_of_hit_faces_old = np.array(mesh_old.vertices[vids_of_hit_faces])
     coords_3d_old = np.sum(barycentric_coords[:, :, np.newaxis] * vertices_of_hit_faces_old, axis=1)
     trimesh.PointCloud(vertices=coords_3d_old, colors=expected_rgbs * 255).show(
-        line_settings={'point_size': 0.005}
+        # line_settings={'point_size': 0.005}
     )
     """ DELETE THIS END"""
 
@@ -230,16 +232,43 @@ if __name__ == "__main__":
 
     # NOTE:
     # mesh_old.vertices[vids_of_hit_faces] !!!!=== mesh_old.vertices[mesh_old.faces[face_idxs]]
-
+    #new_mesh.visual = new_mesh.visual.to_texture()
     uv_vertices_of_hit_faces = np.array(new_mesh.visual.uv[vids_of_hit_faces])
     # TODO: SOMEONE PLS VERIFY THIS CALCULATION
     # Note: we can simply use the same barycentric coords since its all linear
     uv_coords = np.sum(barycentric_coords[:, :, np.newaxis] * uv_vertices_of_hit_faces, axis=1)
 
+    #########################################################
+    #print(uv_coords.shape)
+    # breakpoint()
+    uv_coords = np.clip(uv_coords, 0, 1)
+
+    # Convert UV coordinates to pixel positions
+    image_width = 512 #1024  # Adjust as needed
+    image_height = 512 #1024  # Adjust as needed
+
+    pixel_x = (uv_coords[:, 0] * (image_width - 1)).astype(np.int32)
+    pixel_y = (uv_coords[:, 1] * (image_height - 1)).astype(np.int32)
+
+    # Create an empty image
+    image = np.zeros((image_height, image_width, 3), dtype=np.uint8)
+
+    # Populate the image with the RGB values
+    for i in range(len(expected_rgbs)):
+        x = pixel_x[i]
+        y = pixel_y[i]
+        image[y, x] = (expected_rgbs[i] * 255).astype(np.uint8)  # Convert RGB to 0-255 range
+
+    # Convert numpy array to PIL image
+    image_pil = fromarray(image)
+
+    # Save the image
+    image_pil.save('uv_image.png')
+    #####################################################
     # --------------------------------------
 
     vertices_of_hit_faces = np.array(new_mesh.vertices[vids_of_hit_faces])
-    coords_3d = np.sum(barycentric_coords[:, :, np.newaxis] * vertices_of_hit_faces, axis=1)
+    coords_3d = np.sum(barycentric_coords[:, :, np.newaxis] * vertices_of_hit_faces, axis=1) # TODO might need to integrate this into the pipeline as well 
 
     """ DEBUG ONLY"""
     # Lets try only the legs
@@ -253,13 +282,15 @@ if __name__ == "__main__":
     """ DEBUG END"""
 
     # Sanity-Check visualization
-    trimesh.PointCloud(vertices=coords_3d, colors=expected_rgbs * 255).show(
-        line_settings={'point_size': 0.005}
-    )
+    # trimesh.PointCloud(vertices=coords_3d, colors=expected_rgbs * 255).show(
+       # # line_settings={'point_size': 0.005}
+    # )
     """ LONG TEST END"""
 
     dataset = InstantUVDataset(uv=uv_coords, rgb=expected_rgbs, points_xyz=coords_3d)
     n_channels = dataset.rgb.shape[1]
+    print("DONE")
+    exit()
     model = tcnn.NetworkWithInputEncoding(n_input_dims=2, n_output_dims=n_channels,
                                           encoding_config=tiny_nn_config["encoding"],
                                           network_config=tiny_nn_config["network"]).to(device)
