@@ -13,7 +13,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from util.cameras import undistort_pixels_meshroom_radial_k3, DistortionTypes
-from util.utils import tensor_mem_size_in_bytes, load_mesh
+from util.utils import tensor_mem_size_in_bytes, load_mesh, map_to_UV, get_mapping
 
 def get_ray_mesh_intersector(mesh):
     try:
@@ -210,16 +210,19 @@ def ray_tracing_xyz(ray_mesh_intersector,
 
 
 class MeshViewPreProcessor:
-    def __init__(self, path_to_mesh, out_directory):
+    def __init__(self, path_to_mesh, out_directory, config=None):
         self.out_dir = out_directory
         self.mesh = load_mesh(path_to_mesh)
         self.ray_mesh_intersector = get_ray_mesh_intersector(self.mesh)
+        self.config = config
 
         self.cache_vertex_idxs_of_hit_faces = []
         self.cache_barycentric_coords = []
         self.cache_expected_rgbs = []
         self.cache_unit_ray_dirs = []
         self.cache_face_idxs = []
+        self.cache_uv_coords = []
+        
 
     def _ray_mesh_intersect(self, ray_origins, ray_directions, return_depth=False, camCv2world=None):
 
@@ -274,6 +277,9 @@ class MeshViewPreProcessor:
 
         """
         
+        # get uv coordinates
+        mapping = get_mapping(self.mesh, self.config)
+        uv_coords = map_to_UV(barycentric_coords, vertex_idxs_of_hit_faces, mapping)
 
         # Choose the correct GTs and viewing directions for the hits.
         num_hits = hit_ray_idxs.size()[0]
@@ -294,6 +300,7 @@ class MeshViewPreProcessor:
         barycentric_coords = barycentric_coords.to(torch.float32)
         expected_rgbs = expected_rgbs.to(torch.float32)
         unit_ray_dirs = unit_ray_dirs.to(torch.float32)
+        uv_coords = uv_coords.to(torch.float32) # FIXME check if this works
 
         # And finally, we store the results in the cache
         for idx in range(num_hits):
@@ -302,6 +309,7 @@ class MeshViewPreProcessor:
             self.cache_barycentric_coords.append(barycentric_coords[idx])
             self.cache_expected_rgbs.append(expected_rgbs[idx])
             self.cache_unit_ray_dirs.append(unit_ray_dirs[idx])
+            self.cache_uv_coords.append(uv_coords[idx])
 
 
     def write_to_disk(self):
@@ -332,6 +340,13 @@ class MeshViewPreProcessor:
             f"Barycentric Coords: dim={self.cache_barycentric_coords.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_barycentric_coords)}B, dtype={self.cache_barycentric_coords.dtype}")
         np.save(os.path.join(self.out_dir, "barycentric_coords.npy"), self.cache_barycentric_coords, allow_pickle=False)
         del self.cache_barycentric_coords
+        gc.collect()  # Force garbage collection
+
+        self.cache_uv_coords = torch.stack(self.cache_uv_coords)
+        print(
+            f"UV Coords: dim={self.cache_uv_coords.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_uv_coords)}B, dtype={self.cache_uv_coords.dtype}")
+        np.save(os.path.join(self.out_dir, "uv_coords.npy"), self.cache_uv_coords, allow_pickle=False)
+        del self.cache_uv_coords
         gc.collect()  # Force garbage collection
 
         self.cache_expected_rgbs = torch.stack(self.cache_expected_rgbs)
