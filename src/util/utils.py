@@ -406,6 +406,7 @@ def map_to_UV(point_barys, face_vids, texture_visual):
     """
     uv_vertices_of_hit_faces = np.array(texture_visual.uv[face_vids])
     # Note: we can simply use the same barycentric coords since its all linear
-    uv_coords = np.sum(point_barys[:, :, np.newaxis] * uv_vertices_of_hit_faces, axis=1)
+    # FIXME: torch->np->torch is shit
+    uv_coords = torch.from_numpy(np.sum(point_barys.numpy()[:, :, np.newaxis] * uv_vertices_of_hit_faces, axis=1))
 
     return uv_coords

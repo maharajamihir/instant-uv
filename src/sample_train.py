@@ -17,7 +17,8 @@ from PIL.Image import fromarray
 from trimesh import visual
 
 from data.dataset import InstantUVDataset
-from util.utils import load_mesh
+from util.render import ImageRenderer
+from util.utils import load_mesh, compute_psnr
 
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
 # Append src/
@@ -31,7 +32,8 @@ SCRIPTS_DIR = str(Path(__file__).parent / "tiny-cuda-nn/scripts")
 sys.path.append(SCRIPTS_DIR)
 
 try:
-    # import tinycudann as tcnn
+    import tinycudann as tcnn
+
     print("starting...")
 except ImportError:
     print("This sample requires the tiny-cuda-nn extension for PyTorch.")
@@ -115,6 +117,11 @@ if __name__ == "__main__":
     with open(args.our_config) as our_config_file:
         our_config = yaml.safe_load(our_config_file)
 
+    data_split_path = our_config.get("data", {}).get("data_split")
+    if data_split_path:
+        with open(data_split_path, "rb") as f:
+            data_split = yaml.safe_load(f)
+
     # Load preprocessed data
     preproc_data_path = Path(our_config["data"]["preproc_data_path"]) / "train"
 
@@ -134,10 +141,9 @@ if __name__ == "__main__":
     vertices_of_hit_faces_old = np.array(mesh_old.vertices[vids_of_hit_faces])
     coords_3d_old = np.sum(barycentric_coords[:, :, np.newaxis] * vertices_of_hit_faces_old, axis=1)
     trimesh.PointCloud(vertices=coords_3d_old, colors=expected_rgbs * 255).show(
-        # line_settings={'point_size': 0.005}
+        line_settings={'point_size': 0.005}
     )
     """ DELETE THIS END"""
-
 
     # def extract_uv_mapping(obj_file):
     #     mesh = trimesh.load(obj_file)
@@ -166,7 +172,6 @@ if __name__ == "__main__":
     #     u, v, w = barycentric_coords(point_3d, *face_vertices)
     #     uv_point = u * uv_vertices[0] + v * uv_vertices[1] + w * uv_vertices[2]
     #     return uv_point
-
 
     # Usage example
     mesh = load_mesh(mesh_file)
@@ -223,7 +228,6 @@ if __name__ == "__main__":
     unit_ray_dirs = unit_ray_dirs  # Stays the same
     vids_of_hit_faces = indices[face_idxs]
 
-
     # NOTE: Check for proof.
     # mesh_old.vertices[mesh_old.faces[face_idxs]], new_mesh.vertices[indices[face_idxs]], vids_of_hit_faces, mesh_old.vertices[vids_of_hit_faces], new_mesh.faces.tolist().index([reverse_vmapping.get(v)[0] for v in vids_of_hit_faces[0]]),
 
@@ -232,43 +236,17 @@ if __name__ == "__main__":
 
     # NOTE:
     # mesh_old.vertices[vids_of_hit_faces] !!!!=== mesh_old.vertices[mesh_old.faces[face_idxs]]
-    #new_mesh.visual = new_mesh.visual.to_texture()
+    # new_mesh.visual = new_mesh.visual.to_texture()
     uv_vertices_of_hit_faces = np.array(new_mesh.visual.uv[vids_of_hit_faces])
     # TODO: SOMEONE PLS VERIFY THIS CALCULATION
     # Note: we can simply use the same barycentric coords since its all linear
     uv_coords = np.sum(barycentric_coords[:, :, np.newaxis] * uv_vertices_of_hit_faces, axis=1)
 
-    #########################################################
-    #print(uv_coords.shape)
-    # breakpoint()
-    uv_coords = np.clip(uv_coords, 0, 1)
-
-    # Convert UV coordinates to pixel positions
-    image_width = 512 #1024  # Adjust as needed
-    image_height = 512 #1024  # Adjust as needed
-
-    pixel_x = (uv_coords[:, 0] * (image_width - 1)).astype(np.int32)
-    pixel_y = (uv_coords[:, 1] * (image_height - 1)).astype(np.int32)
-
-    # Create an empty image
-    image = np.zeros((image_height, image_width, 3), dtype=np.uint8)
-
-    # Populate the image with the RGB values
-    for i in range(len(expected_rgbs)):
-        x = pixel_x[i]
-        y = pixel_y[i]
-        image[y, x] = (expected_rgbs[i] * 255).astype(np.uint8)  # Convert RGB to 0-255 range
-
-    # Convert numpy array to PIL image
-    image_pil = fromarray(image)
-
-    # Save the image
-    image_pil.save('uv_image.png')
-    #####################################################
     # --------------------------------------
 
     vertices_of_hit_faces = np.array(new_mesh.vertices[vids_of_hit_faces])
-    coords_3d = np.sum(barycentric_coords[:, :, np.newaxis] * vertices_of_hit_faces, axis=1) # TODO might need to integrate this into the pipeline as well 
+    coords_3d = np.sum(barycentric_coords[:, :, np.newaxis] * vertices_of_hit_faces,
+                       axis=1)  # TODO might need to integrate this into the pipeline as well
 
     """ DEBUG ONLY"""
     # Lets try only the legs
@@ -283,17 +261,19 @@ if __name__ == "__main__":
 
     # Sanity-Check visualization
     # trimesh.PointCloud(vertices=coords_3d, colors=expected_rgbs * 255).show(
-       # # line_settings={'point_size': 0.005}
+    #   line_settings={'point_size': 0.005}
     # )
     """ LONG TEST END"""
 
     dataset = InstantUVDataset(uv=uv_coords, rgb=expected_rgbs, points_xyz=coords_3d)
     n_channels = dataset.rgb.shape[1]
-    print("DONE")
-    exit()
     model = tcnn.NetworkWithInputEncoding(n_input_dims=2, n_output_dims=n_channels,
                                           encoding_config=tiny_nn_config["encoding"],
                                           network_config=tiny_nn_config["network"]).to(device)
+
+    ir = ImageRenderer(xatlas_path,
+                       dataset_path=our_config["data"]["raw_data_path"],
+                       uv_path=uv_path)
     print(model)
 
     # ===================================================================================================
@@ -316,7 +296,7 @@ if __name__ == "__main__":
     max_y = new_mesh.visual.uv[:, 1].max()
     # Also normalized with aspect ratio 1:1
 
-    resolution = (500, 500)  # For testing
+    resolution = (700, 700)  # For testing
     img_shape = resolution + torch.Size([n_channels])
     n_pixels = resolution[0] * resolution[1]
 
@@ -332,6 +312,34 @@ if __name__ == "__main__":
     # print(f"Writing '{path}'... ", end="")
     # write_image(path, image(xy).reshape(img_shape).detach().cpu().numpy())
     # print("done.")
+    """ GT IMAGE """
+    # Define grey image
+    black_image = torch.zeros((*resolution, 3), dtype=torch.uint8, device=device)
+
+    # Get predictions for all that we have in dataset
+    input = torch.from_numpy(dataset.uv).to(device)
+    pixel_xy = (input * torch.tensor(resolution, device=device)).long()
+    gt = torch.from_numpy(dataset.rgb).to(device)
+    # Multiply predictions by 255 and convert to int in one step
+    scaled_gt = (gt * 255).type(torch.uint8)
+
+    # Flattened indices
+    indices_px = pixel_xy[:, 1] * resolution[0] + pixel_xy[:, 0]
+
+    # Initialize accumulators and count arrays
+    summed_values = torch.zeros((resolution[0] * resolution[1], 3), dtype=torch.float32, device=pixel_xy.device)
+    counts = torch.zeros((resolution[0] * resolution[1],), dtype=torch.int32, device=pixel_xy.device)
+
+    # Use scatter_add to sum values and count occurrences
+    summed_values.index_add_(0, indices_px, scaled_gt.float())
+    counts.index_add_(0, indices_px, torch.ones_like(indices_px, dtype=torch.int32))
+
+    # Use advanced indexing to assign values
+    black_image[pixel_xy[:, 1], pixel_xy[:, 0], :] = scaled_gt
+
+    # Note: If we flip here we are in the right orientation for the output map if we visualize!!
+    fromarray(np.flipud(black_image.cpu().numpy()), "RGB").save("reference.png")
+    """ END """
 
     prev_time = time.perf_counter()
 
@@ -372,14 +380,14 @@ if __name__ == "__main__":
             elapsed_time = time.perf_counter() - prev_time
             print(f"Step#{i}: loss={loss_val} time={int(elapsed_time * 1000000)}[µs]")
 
-            path = f"{i}.jpg"
+            path = f"{i}.png"
             print(f"Writing '{path}'... ", end="")
             with torch.no_grad():
                 write_image(path, np.flipud(model(xy).reshape(img_shape).clamp(0.0, 1.0).detach().cpu().numpy()))
             print("done.")
 
             """Second image only on dataset"""
-            path = f"{i}_ds.jpg"
+            path = f"{i}_ds.png"
             print(f"Writing '{path}'... ", end="")
             with torch.no_grad():
                 # Define grey image
@@ -400,16 +408,32 @@ if __name__ == "__main__":
                 fromarray(np.flipud(grey_image.cpu().numpy()), "RGB").save(path)
             print("done.")
 
+            """ VALIDATION """
+            # TODO: Proper this is just for debug
+            print("Validation.")
+            images_np, gts, masks = ir.render_views(
+                model,
+                mesh_views_list=data_split["mesh_views_list_val"],
+            )
+            val_psnrs = np.zeros(len(images_np), dtype=np.float32)
+            for i, (image_pred, image_gt, mask) in enumerate(list(zip(images_np, gts, masks))):
+                val_psnrs[i] = compute_psnr(
+                    image_gt[mask].astype("int16") / 255.0,  # FIXME: utype8 would mess up the calculation (CHECK)
+                    image_pred[mask].astype("int16") / 255.0
+                )
+
+            print("Validation Average PSNR: {:.4f}".format(np.mean(val_psnrs)))
             # Ignore the time spent saving the image
             prev_time = time.perf_counter()
 
             if i > 0 and interval < 1000:
                 interval *= 10
 
-    if args.result_filename:
-        print(f"Writing '{args.result_filename}'... ", end="")
-        with torch.no_grad():
-            write_image(args.result_filename, model(xy).reshape(img_shape).clamp(0.0, 1.0).detach().cpu().numpy())
-        print("done.")
+    # TODO: Technically we can have a final image here
+    # if args.result_filename:
+    #     print(f"Writing '{args.result_filename}'... ", end="")
+    #     with torch.no_grad():
+    #         write_image(args.result_filename, model(xy).reshape(img_shape).clamp(0.0, 1.0).detach().cpu().numpy())
+    #     print("done.")
 
     tcnn.free_temporary_memory()

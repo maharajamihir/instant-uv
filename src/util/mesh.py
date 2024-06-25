@@ -10,10 +10,12 @@ import os
 import gc
 import scipy as sp
 import warnings
+
 warnings.filterwarnings('ignore')
 
 from util.cameras import undistort_pixels_meshroom_radial_k3, DistortionTypes
 from util.utils import tensor_mem_size_in_bytes, load_mesh, map_to_UV, get_mapping
+
 
 def get_ray_mesh_intersector(mesh):
     try:
@@ -38,12 +40,13 @@ def create_ray_origins_and_directions(camCv2world, K, mask_1d, *, H, W, distorti
 
     coord2d = torch.cat([coord2d_x[..., None], coord2d_y[..., None]], dim=-1).reshape(-1, 2)  # N*M x 2
     selected_coord2d = coord2d[mask_1d]  # L x 2
-    
+
     # If the views are distorted, remove the distortion from the 2D pixel coordinates
     if distortion_type is not None:
         assert distortion_coeffs is not None
         if distortion_type == DistortionTypes.MESHROOM_RADIAL_K3:
-            selected_coord2d = undistort_pixels_meshroom_radial_k3(selected_coord2d.numpy(), K.numpy(), distortion_coeffs)
+            selected_coord2d = undistort_pixels_meshroom_radial_k3(selected_coord2d.numpy(), K.numpy(),
+                                                                   distortion_coeffs)
             selected_coord2d = torch.from_numpy(selected_coord2d).to(torch.float32)
         else:
             raise ValueError(f"Unknown distortion type: {distortion_type}")
@@ -63,12 +66,16 @@ def create_ray_origins_and_directions(camCv2world, K, mask_1d, *, H, W, distorti
     return ray_origins, unit_ray_dirs
 
 
-def ray_mesh_intersect(ray_mesh_intersector, mesh, ray_origins, ray_directions, return_depth=False, camCv2world=None):
+def ray_mesh_intersect(ray_mesh_intersector, mesh, ray_origins, ray_directions, return_depth=False, camCv2world=None,
+                       return_hit_mask=False):
     # Compute the intersection points between the mesh and the rays
 
     # Note: It might happen that M <= N where M is the number of returned hits
     intersect_locs, hit_ray_idxs, face_idxs = \
         ray_mesh_intersector.intersects_location(ray_origins, ray_directions, multiple_hits=False)
+
+    if return_hit_mask:
+        hit_mask = ray_mesh_intersector.intersects_any(ray_origins, ray_directions)
 
     # Next, we need to determine the barycentric coordinates of the hit points.
 
@@ -77,7 +84,8 @@ def ray_mesh_intersect(ray_mesh_intersector, mesh, ray_origins, ray_directions, 
 
     vertex_idxs_of_hit_faces = vertex_idxs_of_hit_faces.reshape(-1, 3)  # M x 3
 
-    barycentric_coords = trimesh.triangles.points_to_barycentric(hit_triangles, intersect_locs, method='cramer')  # M x 3
+    barycentric_coords = trimesh.triangles.points_to_barycentric(hit_triangles, intersect_locs,
+                                                                 method='cramer')  # M x 3
 
     if return_depth:
         assert camCv2world is not None
@@ -102,8 +110,12 @@ def ray_mesh_intersect(ray_mesh_intersector, mesh, ray_origins, ray_directions, 
     hit_ray_idxs = torch.from_numpy(hit_ray_idxs)
     face_idxs = torch.from_numpy(face_idxs).to(dtype=torch.int64)
 
+    if return_depth and return_hit_mask:
+        return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, hit_depth, hit_mask
     if return_depth:
         return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, hit_depth
+    if return_hit_mask:
+        return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, hit_mask
     return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs
 
 
@@ -176,17 +188,17 @@ def ray_tracing_xyz(ray_mesh_intersector,
                     H,
                     W,
                     batched=True,
-                    distortion_coeffs=None, 
+                    distortion_coeffs=None,
                     distortion_type=None):
     if obj_mask_1d is None:
         mask = torch.tensor([True]).expand(H * W)
     else:
         mask = obj_mask_1d
-    ray_origins, unit_ray_dirs = create_ray_origins_and_directions(camCv2world, 
-                                                                   K, 
-                                                                   mask, 
-                                                                   H=H, 
-                                                                   W=W, 
+    ray_origins, unit_ray_dirs = create_ray_origins_and_directions(camCv2world,
+                                                                   K,
+                                                                   mask,
+                                                                   H=H,
+                                                                   W=W,
                                                                    distortion_coeffs=distortion_coeffs,
                                                                    distortion_type=distortion_type)
     if batched:
@@ -205,16 +217,17 @@ def ray_tracing_xyz(ray_mesh_intersector,
     vertex_idxs_of_hit_faces = vertex_idxs_of_hit_faces.reshape(-1)  # M*3
     face_vertices = torch.tensor(vertices[vertex_idxs_of_hit_faces].reshape(-1, 3, 3), dtype=torch.float32)  # M x 3 x 3
     hit_points_xyz = torch.einsum('bij,bi->bj', face_vertices, barycentric_coords)  # M x 3
- 
+
     return barycentric_coords, hit_ray_idxs, unit_ray_dirs[hit_ray_idxs], face_idxs, hit_points_xyz
 
 
 class MeshViewPreProcessor:
-    def __init__(self, path_to_mesh, out_directory, config=None):
+    def __init__(self, path_to_mesh, out_directory, config=None, split=None):
         self.out_dir = out_directory
         self.mesh = load_mesh(path_to_mesh)
         self.ray_mesh_intersector = get_ray_mesh_intersector(self.mesh)
         self.config = config
+        self.split = split
 
         self.cache_vertex_idxs_of_hit_faces = []
         self.cache_barycentric_coords = []
@@ -222,17 +235,15 @@ class MeshViewPreProcessor:
         self.cache_unit_ray_dirs = []
         self.cache_face_idxs = []
         self.cache_uv_coords = []
-        
 
     def _ray_mesh_intersect(self, ray_origins, ray_directions, return_depth=False, camCv2world=None):
-
-        # TODO instead of doing simple ray mesh intersection, we are interested in the x,y,z coordinates 
+        # TODO instead of doing simple ray mesh intersection, we are interested in the x,y,z coordinates
         # TODO change to ray_tracing_xyz and retrieve x,y,z coordinates
-        return ray_mesh_intersect(self.ray_mesh_intersector, 
-                                  self.mesh, 
-                                  ray_origins, 
-                                  ray_directions, 
-                                  return_depth=return_depth, 
+        return ray_mesh_intersect(self.ray_mesh_intersector,
+                                  self.mesh,
+                                  ray_origins,
+                                  ray_directions,
+                                  return_depth=return_depth,
                                   camCv2world=camCv2world)
 
     def cache_single_view(self, camCv2world, K, mask, img, distortion_coeffs=None, distortion_type=None):
@@ -247,16 +258,22 @@ class MeshViewPreProcessor:
         expected_rgbs = img[mask]  # L x 3
 
         # Get the ray origins and unit directions
-        ray_origins, unit_ray_dirs = create_ray_origins_and_directions(camCv2world, 
-                                                                       K, 
-                                                                       mask, 
-                                                                       H=H, 
-                                                                       W=W, 
-                                                                       distortion_coeffs=distortion_coeffs, 
+        ray_origins, unit_ray_dirs = create_ray_origins_and_directions(camCv2world,
+                                                                       K,
+                                                                       mask,
+                                                                       H=H,
+                                                                       W=W,
+                                                                       distortion_coeffs=distortion_coeffs,
                                                                        distortion_type=distortion_type)
 
         # Then, we can compute the ray-mesh-intersections
-        vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs = self._ray_mesh_intersect(ray_origins, unit_ray_dirs)
+        vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs = self._ray_mesh_intersect(ray_origins,
+                                                                                                         unit_ray_dirs)
+
+        # Sanity assertion
+        # TODO: Note we dont care about this error in preprocessing lol
+        # assert len(vertex_idxs_of_hit_faces) == len(ray_origins), \
+        #    f"SHOULD MATCH {len(vertex_idxs_of_hit_faces)} != {len(ray_origins)}"
 
         """
         TODO use the retrieved values from ray mesh intersection to obtain our preferred dataset format
@@ -276,10 +293,12 @@ class MeshViewPreProcessor:
             - Use the map_to_UV function from `utils/utils.py` to obtain a 2D points
 
         """
-        
+
         # get uv coordinates
-        mapping = get_mapping(self.mesh, self.config)
-        uv_coords = map_to_UV(barycentric_coords, vertex_idxs_of_hit_faces, mapping)
+        mapping = get_mapping(self.mesh, self.split, self.config)
+
+        # FIXME: mapping.visual, we must get the right object directly form get_mapping
+        uv_coords = map_to_UV(barycentric_coords, vertex_idxs_of_hit_faces, mapping.visual)
 
         # Choose the correct GTs and viewing directions for the hits.
         num_hits = hit_ray_idxs.size()[0]
@@ -293,14 +312,14 @@ class MeshViewPreProcessor:
         # Cast the indices down to int32 to save memory. Usually indices have to be int64, however, we assume that
         # the indices from 0 to 2^31-1 are sufficient. Therefore, we can safely cast down
 
-        assert torch.all(face_idxs <= (2<<31)-1)
+        assert torch.all(face_idxs <= (2 << 31) - 1)
         face_idxs = face_idxs.to(torch.int32)
-        assert torch.all(vertex_idxs_of_hit_faces <= (2<<31)-1)
+        assert torch.all(vertex_idxs_of_hit_faces <= (2 << 31) - 1)
         vertex_idxs_of_hit_faces = vertex_idxs_of_hit_faces.to(torch.int32)
         barycentric_coords = barycentric_coords.to(torch.float32)
         expected_rgbs = expected_rgbs.to(torch.float32)
         unit_ray_dirs = unit_ray_dirs.to(torch.float32)
-        uv_coords = uv_coords.to(torch.float32) # FIXME check if this works
+        uv_coords = uv_coords.to(torch.float32)  # FIXME check if this works
 
         # And finally, we store the results in the cache
         for idx in range(num_hits):
@@ -310,7 +329,6 @@ class MeshViewPreProcessor:
             self.cache_expected_rgbs.append(expected_rgbs[idx])
             self.cache_unit_ray_dirs.append(unit_ray_dirs[idx])
             self.cache_uv_coords.append(uv_coords[idx])
-
 
     def write_to_disk(self):
         print("Starting to write to disk...")
