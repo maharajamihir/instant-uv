@@ -42,7 +42,7 @@ except ImportError:
 
 from common import read_image, write_image, ROOT_DIR
 
-DATA_DIR = os.path.join(ROOT_DIR, "data")
+DATA_DIR = os.path.join("data")
 IMAGES_DIR = os.path.join(DATA_DIR, "images")
 
 
@@ -88,7 +88,7 @@ def get_args():
                         help="YAML config for our training stuff")
     parser.add_argument("tiny_nn_config", nargs="?", default="src/tiny-cuda-nn/data/config_hash.json",
                         help="JSON config for tiny-cuda-nn")
-    parser.add_argument("n_steps", nargs="?", type=int, default=10000000, help="Number of training steps")
+    parser.add_argument("n_steps", nargs="?", type=int, default=100, help="Number of training steps")
     # parser.add_argument("result_filename", nargs="?", default="", help="Number of training steps")
 
     args = parser.parse_args()
@@ -131,9 +131,9 @@ if __name__ == "__main__":
     mesh_old = trimesh.load(mesh_file)
     vertices_of_hit_faces_old = np.array(mesh_old.vertices[vids_of_hit_faces])
     coords_3d_old = np.sum(barycentric_coords[:, :, np.newaxis] * vertices_of_hit_faces_old, axis=1)
-    trimesh.PointCloud(vertices=coords_3d_old, colors=expected_rgbs * 255).show(
-        line_settings={'point_size': 0.005}
-    )
+    # trimesh.PointCloud(vertices=coords_3d_old, colors=expected_rgbs * 255).show(
+        # line_settings={'point_size': 0.005}
+    # )
     """ DELETE THIS END"""
 
 
@@ -192,7 +192,7 @@ if __name__ == "__main__":
         indices_translated_into_old_mesh = [list(map(lambda x: vmapping[x], f)) for f in indices]
         # We check that the old_indices match the new face indices
         assert indices_translated_into_old_mesh == mesh.faces.view(np.ndarray).tolist()
-        """ -------------------- """
+        """ -------------------- """ 
 
         # Turn into trimesh and save
         # Process=False will keep the duplicates
@@ -253,13 +253,16 @@ if __name__ == "__main__":
     """ DEBUG END"""
 
     # Sanity-Check visualization
-    trimesh.PointCloud(vertices=coords_3d, colors=expected_rgbs * 255).show(
-        line_settings={'point_size': 0.005}
-    )
+    # trimesh.PointCloud(vertices=coords_3d, colors=expected_rgbs * 255).show(
+        # line_settings={'point_size': 0.005}
+    # )
     """ LONG TEST END"""
 
+    print("Loading data")
     dataset = InstantUVDataset(uv=uv_coords, rgb=expected_rgbs, points_xyz=coords_3d)
     n_channels = dataset.rgb.shape[1]
+    print("Channels:", n_channels)
+    print("Initializing model")
     model = tcnn.NetworkWithInputEncoding(n_input_dims=2, n_output_dims=n_channels,
                                           encoding_config=tiny_nn_config["encoding"],
                                           network_config=tiny_nn_config["network"]).to(device)
