@@ -297,8 +297,8 @@ class MeshViewPreProcessor:
         # get uv coordinates
         mapping = get_mapping(self.mesh, self.split, self.config)
 
-        # FIXME: mapping.visual, we must get the right object directly form get_mapping
-        uv_coords = map_to_UV(barycentric_coords, vertex_idxs_of_hit_faces, mapping.visual)
+        # FIXME: mapping, we must get the right object directly form get_mapping
+        uv_coords = map_to_UV(barycentric_coords, face_idxs, mapping)
 
         # Choose the correct GTs and viewing directions for the hits.
         num_hits = hit_ray_idxs.size()[0]

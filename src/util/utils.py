@@ -385,7 +385,7 @@ def get_mapping(mesh, split, config):
     return new_mesh  # return mesh object with the uv mapping
 
 
-def map_to_UV(point_barys, face_vids, texture_visual):
+def map_to_UV(point_barys, face_idxs, mesh_with_mapping):
     """
     TODO: Implement the function to map bary points (point_bary) to 2D UV coordinates.
 
@@ -404,7 +404,11 @@ def map_to_UV(point_barys, face_vids, texture_visual):
         tuple or list of tuples: A tuple (u, v) representing the 2D UV coordinates or a list of such tuples.
         Return torch tensors if possible
     """
-    uv_vertices_of_hit_faces = np.array(texture_visual.uv[face_vids])
+
+    indices = mesh_with_mapping.faces
+    vids_of_hit_faces = indices[face_idxs]
+    texture_visual = mesh_with_mapping.visual
+    uv_vertices_of_hit_faces = np.array(texture_visual.uv[vids_of_hit_faces])
     # Note: we can simply use the same barycentric coords since its all linear
     # FIXME: torch->np->torch is shit
     uv_coords = torch.from_numpy(np.sum(point_barys.numpy()[:, :, np.newaxis] * uv_vertices_of_hit_faces, axis=1))

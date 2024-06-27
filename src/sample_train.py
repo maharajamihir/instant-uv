@@ -266,7 +266,12 @@ if __name__ == "__main__":
     """ LONG TEST END"""
 
     print("Loading data")
-    dataset = InstantUVDataset(uv=uv_coords, rgb=expected_rgbs, points_xyz=coords_3d)
+    train_uv_path = str(Path(our_config["data"]["preproc_data_path"]) / "train" / "uv_coords.npy")
+    train_uv_coords = np.load(train_uv_path)
+    train_uv_coords = uv_coords
+
+
+    dataset = InstantUVDataset(uv=train_uv_coords, rgb=expected_rgbs, points_xyz=coords_3d)
     n_channels = dataset.rgb.shape[1]
     print("Channels:", n_channels)
     print("Initializing model")

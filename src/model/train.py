@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 import argparse
 from tqdm import tqdm
-
+from PIL.Image import fromarray
 # Append src/
 sys.path.append("src/")
 sys.path.append(str(Path(__file__).parent.parent))
@@ -102,6 +102,7 @@ class Trainer:
         This function iterates over the number of epochs defined in the configuration, 
         performing training and validation steps.
         """
+        best_val = 10000.
         self.train_loader = InstantUVDataLoader(self.train_data, batch_size=8000, shuffle=True)
         self.val_loader = InstantUVDataLoader(self.val_data, batch_size=8000, shuffle=False)
         num_epochs = self.config["training"].get('epochs', 10)
@@ -112,11 +113,13 @@ class Trainer:
             # Train for one epoch
             train_loss = self._train_epoch()
             print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {train_loss}")
-            
+
             # Validation
             if epoch % self.config["training"].get("eval_every", 1000) == 0:
                 val_loss, val_psnr = self._validate_epoch()
                 print("Validation Loss:", val_loss, "Validation PSNR:", val_psnr)
+                if(val_loss < best_val):
+                    torch.save(model.state_dict(), "model.pt")
             
     def _train_epoch(self):
         """
@@ -164,7 +167,7 @@ class Trainer:
             for batch in self.val_loader:
                 loss = self._validate_step(batch)
                 running_loss += loss
-        
+
         torch.cuda.synchronize()
         # compute psnr
         images_np, gts, masks = self.image_renderer.render_views(
@@ -172,7 +175,7 @@ class Trainer:
             mesh_views_list=self.data_split["mesh_views_list_val"],
         )
         val_psnrs = np.zeros(len(images_np), dtype=np.float32)
-        for i, (image_pred, image_gt, mask) in tqdm(enumerate(list(zip(images_np, gts, masks)))): # FIXME this loop is super slow!!! fix this
+        for i, (image_pred, image_gt, mask) in enumerate(list(zip(images_np, gts, masks))): # FIXME this loop is super slow!!! fix this
             val_psnrs[i] = compute_psnr(
                 image_gt[mask].astype("int16") / 255.0,  # FIXME: utype8 would mess up the calculation (CHECK)
                 image_pred[mask].astype("int16") / 255.0
