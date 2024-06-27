@@ -14,9 +14,9 @@ class InstantUVDataset(Dataset):
 
     def __init__(self, uv, rgb, points_xyz=None):
         # points_xyz are optional because we don't really need them for training.
-        self.uv = uv
-        self.rgb = rgb
-        self.points_xyz = points_xyz
+        self.uv = torch.from_numpy(uv)
+        self.rgb = torch.from_numpy(rgb)
+        self.points_xyz = torch.from_numpy(points_xyz) if points_xyz is not None else None
 
     def __len__(self):
         """
@@ -57,8 +57,7 @@ class InstantUVDataLoader(DataLoader):
         shuffle (bool, optional): Whether to shuffle the data at every epoch. Default is True.
     """
 
-    def __init__(self, dataset: InstantUVDataset, batch_size, shuffle=True):
-        super().__init__(dataset, batch_size, shuffle)
+    def __init__(self, dataset, batch_size, shuffle=True):
         self.dataset = dataset
         self.batch_size = batch_size
         self.shuffle = shuffle

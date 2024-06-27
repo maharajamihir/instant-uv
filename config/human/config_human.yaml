@@ -19,4 +19,7 @@ model:
   # TODO model config
 
 training:
-  # TODO training config
+  epochs: 1000
+  eval_every: 500
+  checkpoint_every: 20
+  

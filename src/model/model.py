@@ -1,6 +1,33 @@
+import sys
+
+import os
+import sys
+from pathlib import Path
+
+# Append src/
+sys.path.append(str(Path(__file__).parent.parent))
+# Change into instant-uv
+os.chdir(Path(__file__).parent.parent.parent)
+# Append scripts DIR
+SCRIPTS_DIR = str(Path(__file__).parent.parent / "tiny-cuda-nn/scripts")
+sys.path.append(SCRIPTS_DIR)
+
 import torch
 import torch.nn as nn
-from src.util.utils import map_to_UV
+from util.utils import map_to_UV
+
+try:
+    import tinycudann as tcnn
+    print("Tiny CUDA nn successfully imported!")
+except ImportError:
+    print("This sample requires the tiny-cuda-nn extension for PyTorch.")
+    print("You can install it by running:")
+    print("============================================================")
+    print("tiny-cuda-nn$ cd bindings/torch")
+    print("tiny-cuda-nn/bindings/torch$ python setup.py install")
+    print("============================================================")
+    sys.exit()
+
 
 class InstantUV(nn.Module):
     """
@@ -14,18 +41,20 @@ class InstantUV(nn.Module):
     For understanding check the dummy model below.
     """
     
-    def __init__(self):
-        # TODO
+    def __init__(self, tiny_nn_config):
+        super().__init__()
         self.mapping = None # TODO
-        pass
+        model = tcnn.NetworkWithInputEncoding(n_input_dims=2, n_output_dims=3,
+                                          encoding_config=tiny_nn_config["encoding"],
+                                          network_config=tiny_nn_config["network"])
+        self.model = model
+        self.params = model.params
 
     def forward(self, points_uv):
-        # TODO
-        pass
+        return self.model(points_uv)
 
     @torch.no_grad()
     def inference(self, points_xyz):
-        self.eval()
         points_uv = map_to_UV(points_xyz)
         return self.forward(points_uv)
 

@@ -92,7 +92,7 @@ def get_args():
                         help="YAML config for our training stuff")
     parser.add_argument("tiny_nn_config", nargs="?", default="src/tiny-cuda-nn/data/config_hash.json",
                         help="JSON config for tiny-cuda-nn")
-    parser.add_argument("n_steps", nargs="?", type=int, default=100, help="Number of training steps")
+    parser.add_argument("n_steps", nargs="?", type=int, default=1000000, help="Number of training steps")
     # parser.add_argument("result_filename", nargs="?", default="", help="Number of training steps")
 
     args = parser.parse_args()
@@ -260,9 +260,9 @@ if __name__ == "__main__":
     """ DEBUG END"""
 
     # Sanity-Check visualization
-    trimesh.PointCloud(vertices=coords_3d, colors=expected_rgbs * 255).show(
-        line_settings={'point_size': 0.005}
-    )
+    # trimesh.PointCloud(vertices=coords_3d, colors=expected_rgbs * 255).show(
+        # line_settings={'point_size': 0.005}
+    # )
     """ LONG TEST END"""
 
     print("Loading data")
@@ -320,9 +320,9 @@ if __name__ == "__main__":
     black_image = torch.zeros((*resolution, 3), dtype=torch.uint8, device=device)
 
     # Get predictions for all that we have in dataset
-    input = torch.from_numpy(dataset.uv).to(device)
+    input = dataset.uv.to(device)
     pixel_xy = (input * torch.tensor(resolution, device=device)).long()
-    gt = torch.from_numpy(dataset.rgb).to(device)
+    gt = dataset.rgb.to(device)
     # Multiply predictions by 255 and convert to int in one step
     scaled_gt = (gt * 255).type(torch.uint8)
 
@@ -365,8 +365,8 @@ if __name__ == "__main__":
     for i in range(args.n_steps):
         # For now lets just randomize
         random_indices = torch.randperm(len(dataset))[:batch_size]
-        batch = torch.from_numpy(dataset.uv)[random_indices].to(device)
-        targets = torch.from_numpy(dataset.rgb)[random_indices].to(device)
+        batch = dataset.uv[random_indices].to(device)
+        targets = dataset.rgb[random_indices].to(device)
 
         output = model(batch)
 
@@ -397,7 +397,7 @@ if __name__ == "__main__":
                 grey_image = torch.ones((*resolution, 3), dtype=torch.uint8, device=device) * 128
 
                 # Get predictions for all that we have in dataset
-                input = torch.from_numpy(dataset.uv).to(device)
+                input = dataset.uv.to(device)
                 pixel_xy = (input * torch.tensor(resolution, device=device)).long()
                 predictions = model(input).clamp(0.0, 1.0).detach()
 
@@ -419,7 +419,7 @@ if __name__ == "__main__":
                 mesh_views_list=data_split["mesh_views_list_val"],
             )
             val_psnrs = np.zeros(len(images_np), dtype=np.float32)
-            for i, (image_pred, image_gt, mask) in enumerate(list(zip(images_np, gts, masks))):
+            for i, (image_pred, image_gt, mask) in enumerate(list(zip(images_np, gts, masks))): # FIXME this loop is super slow!!! fix this
                 val_psnrs[i] = compute_psnr(
                     image_gt[mask].astype("int16") / 255.0,  # FIXME: utype8 would mess up the calculation (CHECK)
                     image_pred[mask].astype("int16") / 255.0
