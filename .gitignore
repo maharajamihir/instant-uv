@@ -7,3 +7,8 @@ data/preprocessed
 src/.idea/
 .idea
 /.ipynb_checkpoints/test-checkpoint.ipynb
+
+_scripts_mihir/
+*.png
+logs/
+reports/

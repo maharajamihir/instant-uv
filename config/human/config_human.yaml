@@ -20,6 +20,6 @@ model:
 
 training:
   epochs: 1000
-  eval_every: 500
-  checkpoint_every: 20
+  eval_every: 200
+  checkpoint_every: 200
   

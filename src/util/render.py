@@ -3,7 +3,7 @@ import pickle
 import sys
 from pathlib import Path
 
-import imageio.v2 as imageio
+import imageio as imageio
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -126,6 +126,7 @@ class ImageRenderer:
 
                     img[obj_mask] = rgbs_scaled
                 img = img.astype(np.uint8)
+                os.makedirs("reports/human", exist_ok=True)
                 imageio.imwrite(f"reports/human/{mesh_view}.png", img)
                 images.append(img)
             except AssertionError as e:
