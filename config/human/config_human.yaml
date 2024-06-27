@@ -22,4 +22,5 @@ training:
   epochs: 200
   eval_every: 20
   checkpoint_every: 20
+  batch_size: 8000
   

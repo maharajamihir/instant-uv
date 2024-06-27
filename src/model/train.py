@@ -52,6 +52,7 @@ class Trainer:
         Args:
             model: The model to be trained.
             config: Configuration settings for training, such as optimizer, learning rate, epochs, etc.
+            device: torch.device on what to train
         """
         self.device = device
         self.model = model.to(self.device)
@@ -103,8 +104,8 @@ class Trainer:
         performing training and validation steps.
         """
         best_val = 10000.
-        self.train_loader = InstantUVDataLoader(self.train_data, batch_size=8000, shuffle=True)
-        self.val_loader = InstantUVDataLoader(self.val_data, batch_size=8000, shuffle=False)
+        self.train_loader = InstantUVDataLoader(self.train_data, batch_size=self.config["training"]["batch_size"], shuffle=True)
+        self.val_loader = InstantUVDataLoader(self.val_data, batch_size=self.config["training"]["batch_size"], shuffle=False)
         num_epochs = self.config["training"].get('epochs', 10)
         print("Length train loader:", len(self.train_loader))
         print("Length val loader:", len(self.val_loader))
@@ -119,6 +120,7 @@ class Trainer:
                 val_loss, val_psnr = self._validate_epoch()
                 print("Validation Loss:", val_loss, "Validation PSNR:", val_psnr)
                 if(val_loss < best_val):
+                    print("Saving model...")
                     torch.save(model.state_dict(), "model.pt")
             
     def _train_epoch(self):
@@ -126,6 +128,9 @@ class Trainer:
         Perform one epoch of training.
 
         This function iterates over the training data loader, performing training steps and logging progress.
+
+        Returns:
+            Mean training loss over this epoch
         """
         self.model.train()
         running_loss = 0.0
@@ -158,7 +163,11 @@ class Trainer:
         """
         Perform one epoch of validation.
 
-        This function iterates over the validation data loader, performing validation steps and logging progress.
+        This function iterates over the validation data loader, performing validation steps. 
+        It also renders the val images and saves them in the `reports` directory
+
+        Returns:
+            Mean val loss and psnr over this epoch
         """
         self.model.eval()
         running_loss = 0.0
@@ -204,13 +213,11 @@ class Trainer:
 def get_args():
     parser = argparse.ArgumentParser(description="Image benchmark using PyTorch bindings.")
 
-    # parser.add_argument("image", nargs="?", default="data/images/albert.jpg", help="Image to match")
     parser.add_argument("config_path", nargs="?", default="config/human/config_human.yaml",
                         help="YAML config for our training stuff")
     parser.add_argument("tiny_nn_config", nargs="?", default="src/tiny-cuda-nn/data/config_hash.json",
                         help="JSON config for tiny-cuda-nn")
     parser.add_argument("n_steps", nargs="?", type=int, default=1000000, help="Number of training steps")
-    # parser.add_argument("result_filename", nargs="?", default="", help="Number of training steps")
 
     args = parser.parse_args()
     return args
