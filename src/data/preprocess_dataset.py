@@ -56,7 +56,7 @@ def preprocess_views(mesh_view_pre_proc, mesh_views_list_train, dataset_path):
     mesh_view_pre_proc.write_to_disk()
 
 
-def preprocess_dataset(split, dataset_path, path_to_mesh, out_dir, mesh_views_list_train, check_depth=False):
+def preprocess_dataset(split, dataset_path, path_to_mesh, out_dir, mesh_views_list_train, check_depth=False, config=None):
     """
     Preprocess the entire dataset for a given split.
 
@@ -73,7 +73,7 @@ def preprocess_dataset(split, dataset_path, path_to_mesh, out_dir, mesh_views_li
     # raise RuntimeError(f"Error: You are trying to overwrite the following directory: {split_out_dir}")
     os.makedirs(split_out_dir, exist_ok=True)
 
-    mesh_view_pre_proc = MeshViewPreProcessor(path_to_mesh, split_out_dir)
+    mesh_view_pre_proc = MeshViewPreProcessor(path_to_mesh, split_out_dir, config=config, split=split)
 
     preprocess_views(mesh_view_pre_proc, mesh_views_list_train, dataset_path)
 
@@ -100,7 +100,8 @@ def main():
         dataset_path=dataset_path,
         path_to_mesh=mesh_path,
         out_dir=out_dir,
-        mesh_views_list_train=mesh_views_list_train
+        mesh_views_list_train=mesh_views_list_train,
+        config=config
     )
 
 

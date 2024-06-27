@@ -9,6 +9,10 @@ import yaml
 import sys
 import igl
 import trimesh
+from trimesh import visual
+import xatlas
+from pathlib import Path
+import pickle
 import lpips
 from skimage.metrics import structural_similarity as ssim
 from skimage.metrics import peak_signal_noise_ratio as psnr
@@ -326,7 +330,7 @@ def time_method(model, dummy_input, repetitions=300):
 
 #################################################
 
-def get_mapping(mesh):
+def get_mapping(mesh, split, config):
     """
     TODO: Implement the function to unwrap the mesh and return the mapping for UV coordinates.
 
@@ -342,14 +346,48 @@ def get_mapping(mesh):
                  face of the mesh with its corresponding UV coordinates. Preferably, the mapping should be
                  in a format that can be easily used in the `map_to_UV` function.
     """
-    # TODO: Implement the unwrapping logic here
+    xatlas_path = str(Path(config["data"]["preproc_data_path"]) / split / "xatlas.obj")
+    v_path = str(Path(config["data"]["preproc_data_path"]) / split / "new_vertex_id_to_old_vertex_id.npy")
+    rv_path = str(Path(config["data"]["preproc_data_path"]) / split / "old_vertex_to_new_vertexes.pkl")
+    uv_path = str(Path(config["data"]["preproc_data_path"]) / split / "uv.pkl")
+    if not os.path.isfile(xatlas_path):
+        # Extract with xatlas
+        vmapping, indices, uvs = xatlas.parametrize(mesh.vertices, mesh.faces)
+        np.save(v_path, vmapping, allow_pickle=False)
 
-    return None  # Default return value
+        # maps original vertex to new vertex_id (in case we need it)
+        reverse_vmapping = {}
+        for left, right in zip(range(len(vmapping)), vmapping):
+            reverse_vmapping.setdefault(right, []).append(left)
+        with open(rv_path, "wb") as f:
+            pickle.dump(reverse_vmapping, f)
+
+        # Turn into trimesh and save
+        # Process=False will keep the duplicates
+        new_mesh = trimesh.Trimesh(vertices=mesh.vertices[vmapping], faces=indices, process=False)
+        new_mesh.export(xatlas_path)
 
 
-def map_to_UV(point_xyz, mapping):
+        # save uv seperately
+        with open(uv_path, "wb") as f:
+            pickle.dump(uvs, f)
+    else:
+        # Load data
+        new_mesh = load_mesh(xatlas_path)
+        with open(rv_path, 'rb') as f:
+            reverse_vmapping = pickle.load(f)
+        with open(uv_path, 'rb') as f:
+            uvs = pickle.load(f)
+        vmapping = np.load(v_path)
+        indices = new_mesh.faces
+
+    new_mesh.visual = visual.texture.TextureVisuals(uv=uvs)
+    return new_mesh  # return mesh object with the uv mapping
+
+
+def map_to_UV(point_barys, face_vids, texture_visual):
     """
-    TODO: Implement the function to map 3D points (point_xyz) to 2D UV coordinates.
+    TODO: Implement the function to map bary points (point_bary) to 2D UV coordinates.
 
     This function should take a 3D point or a list of 3D points represented in
     Cartesian coordinates (x, y, z) and map them to 2D UV coordinates. The exact
@@ -366,6 +404,9 @@ def map_to_UV(point_xyz, mapping):
         tuple or list of tuples: A tuple (u, v) representing the 2D UV coordinates or a list of such tuples.
         Return torch tensors if possible
     """
-    # TODO: Implement the mapping logic here
+    uv_vertices_of_hit_faces = np.array(texture_visual.uv[face_vids])
+    # Note: we can simply use the same barycentric coords since its all linear
+    # FIXME: torch->np->torch is shit
+    uv_coords = torch.from_numpy(np.sum(point_barys.numpy()[:, :, np.newaxis] * uv_vertices_of_hit_faces, axis=1))
 
-    return (0, 0)  # Default return value
+    return uv_coords
