@@ -119,6 +119,59 @@ def ray_mesh_intersect(ray_mesh_intersector, mesh, ray_origins, ray_directions, 
     return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs
 
 
+def ray_mesh_intersect_np(ray_mesh_intersector, mesh, ray_origins, ray_directions, return_depth=False, camCv2world=None,
+                          return_hit_mask=False):
+    # Compute the intersection points between the mesh and the rays
+
+    # Note: It might happen that M <= N where M is the number of returned hits
+    intersect_locs, hit_ray_idxs, face_idxs = \
+        ray_mesh_intersector.intersects_location(ray_origins, ray_directions, multiple_hits=False)
+
+    if return_hit_mask:
+        hit_mask = ray_mesh_intersector.intersects_any(ray_origins, ray_directions)
+
+    # Next, we need to determine the barycentric coordinates of the hit points.
+
+    vertex_idxs_of_hit_faces = mesh.faces[face_idxs].reshape(-1)  # M*3
+    hit_triangles = mesh.vertices[vertex_idxs_of_hit_faces].reshape(-1, 3, 3)  # M x 3 x 3
+
+    vertex_idxs_of_hit_faces = vertex_idxs_of_hit_faces.reshape(-1, 3)  # M x 3
+
+    barycentric_coords = trimesh.triangles.points_to_barycentric(hit_triangles, intersect_locs,
+                                                                 method='cramer')  # M x 3
+
+    if return_depth:
+        assert camCv2world is not None
+        camCv2world = camCv2world.cpu().numpy()
+        camCv2world = np.concatenate([camCv2world, np.array([[0., 0, 0, 1]], dtype=camCv2world.dtype)], 0)
+
+        vertices_world = np.concatenate([mesh.vertices, np.ones_like(mesh.vertices[:, :1])], -1)  # V, 4
+
+        camWorld2Cv = np.linalg.inv(camCv2world)
+        vertices_cam = np.dot(vertices_world, camWorld2Cv.T)
+        z_vals = vertices_cam[:, 2][vertex_idxs_of_hit_faces]
+        assert np.all(z_vals > 0)
+
+        assert z_vals.shape == barycentric_coords.shape
+        assert np.allclose(np.sum(barycentric_coords, -1), 1)
+
+        hit_depth = np.sum(z_vals * barycentric_coords, -1)
+        hit_depth = hit_depth
+
+    barycentric_coords = barycentric_coords.astype(np.float32)  # M x 3
+
+    hit_ray_idxs = hit_ray_idxs
+    face_idxs = face_idxs.astype(np.int64)
+
+    if return_depth and return_hit_mask:
+        return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, hit_depth, hit_mask
+    if return_depth:
+        return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, hit_depth
+    if return_hit_mask:
+        return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, hit_mask
+    return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs
+
+
 def ray_mesh_intersect_batched(ray_mesh_intersector, mesh, ray_origins, ray_directions):
     batch_size = 1 << 18
     num_rays = ray_origins.shape[0]

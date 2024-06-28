@@ -199,7 +199,7 @@ if __name__ == "__main__":
         indices_translated_into_old_mesh = [list(map(lambda x: vmapping[x], f)) for f in indices]
         # We check that the old_indices match the new face indices
         assert indices_translated_into_old_mesh == mesh.faces.view(np.ndarray).tolist()
-        """ -------------------- """ 
+        """ -------------------- """
 
         # Turn into trimesh and save
         # Process=False will keep the duplicates
@@ -419,9 +419,11 @@ if __name__ == "__main__":
             """ VALIDATION """
             # TODO: Proper this is just for debug
             print("Validation.")
-            images_np, gts, masks = ir.render_views(
+            images_np, gts, masks = list(), list(), list()
+            ir.render_views(
                 model,
                 mesh_views_list=data_split["mesh_views_list_val"],
+                save_validation_images=True,
             )
             val_psnrs = np.zeros(len(images_np), dtype=np.float32)
             for i, (image_pred, image_gt, mask) in enumerate(list(zip(images_np, gts, masks))): # FIXME this loop is super slow!!! fix this

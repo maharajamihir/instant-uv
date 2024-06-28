@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import sys
 from torchinfo import summary
 import os
 import imageio
@@ -10,6 +9,7 @@ import sys
 import igl
 import trimesh
 from trimesh import visual
+from collections import OrderedDict
 import xatlas
 from pathlib import Path
 import pickle
@@ -71,8 +71,13 @@ def load_mesh(path):
     return mesh
 
 
-def load_cameras(view_path):
+def load_cameras(view_path, as_numpy=False):
     cameras = np.load(os.path.join(view_path, "depth", "cameras.npz"))
+
+    if as_numpy:
+        return cameras["world_mat_0"].astype(np.float32), cameras["camera_mat_0"].astype(np.float32)
+
+    # Torch version
     camCv2world = torch.from_numpy(cameras["world_mat_0"]).to(dtype=torch.float32)
     K = torch.from_numpy(cameras["camera_mat_0"]).to(dtype=torch.float32)
     return camCv2world, K
@@ -83,7 +88,7 @@ def model_summary(model, data):
     summary(model, input_data=[data_batch])
 
 
-def load_obj_mask_as_tensor(view_path):
+def load_obj_mask(view_path, as_numpy=False):
     if view_path.endswith(".npy"):
         return np.load(view_path)
 
@@ -99,8 +104,10 @@ def load_obj_mask_as_tensor(view_path):
         mask = imageio.imread(mask_path)
         obj_mask = mask != 0  # 0 is invalid
 
-    obj_mask = torch.from_numpy(obj_mask)
-    return obj_mask
+    if as_numpy:
+        return obj_mask
+
+    return torch.from_numpy(obj_mask)
 
 
 def load_depth_as_numpy(view_path):
@@ -367,7 +374,6 @@ def get_mapping(mesh, split, config):
         new_mesh = trimesh.Trimesh(vertices=mesh.vertices[vmapping], faces=indices, process=False)
         new_mesh.export(xatlas_path)
 
-
         # save uv seperately
         with open(uv_path, "wb") as f:
             pickle.dump(uvs, f)
@@ -414,3 +420,45 @@ def map_to_UV(point_barys, face_idxs, mesh_with_mapping):
     uv_coords = torch.from_numpy(np.sum(point_barys.numpy()[:, :, np.newaxis] * uv_vertices_of_hit_faces, axis=1))
 
     return uv_coords
+
+
+def export_uv(model, path, resolution=(700,700), n_channels=3, device="cuda"):
+    img_shape = resolution + torch.Size([n_channels])
+
+    half_dx = 0.5 / resolution[0]
+    half_dy = 0.5 / resolution[1]
+    xs = torch.linspace(half_dx, 1 - half_dx, resolution[0], device=device)
+    ys = torch.linspace(half_dy, 1 - half_dy, resolution[1], device=device)
+    xv, yv = torch.meshgrid([xs, ys])
+
+    xy = torch.stack((yv.flatten(), xv.flatten())).t()
+
+    print(f"Writing uv: '{path}'... ", end="")
+    with torch.no_grad():
+        rgbs = np.flipud(model(xy).reshape(img_shape).clamp(0.0, 1.0).detach().cpu().numpy())
+        rgbs_scaled = (rgbs * 255).clip(0, 255).astype(np.uint8)
+        imageio.imwrite(path, rgbs_scaled)
+
+
+    print("done.")
+
+
+
+
+class LRUCache:
+    def __init__(self, capacity: int):
+        self.cache = OrderedDict()
+        self.capacity = capacity
+
+    def get(self, key):
+        if key not in self.cache:
+            return None
+        self.cache.move_to_end(key)
+        return self.cache[key]
+
+    def put(self, key, value):
+        if key in self.cache:
+            self.cache.move_to_end(key)
+        self.cache[key] = value
+        if len(self.cache) > self.capacity:
+            self.cache.popitem(last=False)

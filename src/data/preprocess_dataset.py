@@ -11,7 +11,7 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
 from util.mesh import MeshViewPreProcessor
-from util.utils import load_obj_mask_as_tensor, load_cameras, load_config
+from util.utils import load_obj_mask, load_cameras, load_config
 
 os.chdir(Path(__file__).parent.parent.parent)
 
@@ -40,7 +40,7 @@ def preprocess_views(mesh_view_pre_proc, mesh_views_list_train, dataset_path):
         camCv2world, K = load_cameras(mesh_view_path)
 
         # Load depth map for building a mask
-        obj_mask = load_obj_mask_as_tensor(mesh_view_path)
+        obj_mask = load_obj_mask(mesh_view_path, as_numpy=False)
 
         # Load image
         img = imageio.imread(os.path.join(mesh_view_path, "image", "000.png"))

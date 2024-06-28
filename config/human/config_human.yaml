@@ -19,8 +19,8 @@ model:
   # TODO model config
 
 training:
-  epochs: 200
-  eval_every: 20
+  epochs: 300
+  eval_every: 1
   checkpoint_every: 20
-  batch_size: 8000
+  batch_size: 8000 # 65536  # 2**16
   

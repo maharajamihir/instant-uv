@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 import numpy as np
 
 import os
@@ -8,8 +7,7 @@ import yaml
 import sys
 from pathlib import Path
 import argparse
-from tqdm import tqdm
-from PIL.Image import fromarray
+
 # Append src/
 sys.path.append("src/")
 sys.path.append(str(Path(__file__).parent.parent))
@@ -24,10 +22,8 @@ sys.path.append(SCRIPTS_DIR)
 
 from data.dataset import InstantUVDataset, InstantUVDataLoader
 from util.render import ImageRenderer
-from util.utils import load_mesh, compute_psnr, load_config
+from util.utils import compute_psnr, load_config, export_uv
 from model import InstantUV
-
-
 
 
 class Trainer:
@@ -57,7 +53,7 @@ class Trainer:
         self.device = device
         self.model = model.to(self.device)
         self.config = config
-        
+
         # Load train data
         train_uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv_coords.npy")
         train_rgb_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "expected_rgbs.npy")
@@ -66,7 +62,7 @@ class Trainer:
         train_expected_rgbs = np.load(train_rgb_path)
         train_bary_coords = np.load(train_bary_path)
         self.train_data = InstantUVDataset(uv=train_uv_coords, rgb=train_expected_rgbs, points_xyz=train_bary_coords)
-        
+
         # Load val data 
         val_uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv_coords.npy")
         val_rgb_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "expected_rgbs.npy")
@@ -80,21 +76,22 @@ class Trainer:
             with open(data_split_path, "rb") as f:
                 self.data_split = yaml.safe_load(f)
 
-
-
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=0.01) # FIXME get this from config
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)  # FIXME get this from config
 
         # FIXME would it also work if we just used nn.MSELoss? 
         # or does the normalizing improve this significantly?
-        self.loss_fn = lambda pred,target: ((pred - target.to(pred.dtype)) ** 2 / (pred.detach() ** 2 + 0.01)).mean()
+        self.loss_fn = lambda pred, target: ((pred - target.to(pred.dtype)) ** 2 / (pred.detach() ** 2 + 0.01)).mean()
 
         uv_pkl_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv.pkl")
         xatlas_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "xatlas.obj")
 
-        self.image_renderer = ImageRenderer(xatlas_path, 
-                                            dataset_path=config["data"]["raw_data_path"], 
-                                            uv_path=uv_pkl_path)
+        self.image_renderer = ImageRenderer(
+            xatlas_path,
+            dataset_path=config["data"]["raw_data_path"],
+            uv_path=uv_pkl_path
+        )
 
+        self.uv_resolution = (1024, 1024)  # TODO: Make this config arg
 
     def train(self):
         """
@@ -104,25 +101,38 @@ class Trainer:
         performing training and validation steps.
         """
         best_val = 10000.
-        self.train_loader = InstantUVDataLoader(self.train_data, batch_size=self.config["training"]["batch_size"], shuffle=True)
-        self.val_loader = InstantUVDataLoader(self.val_data, batch_size=self.config["training"]["batch_size"], shuffle=False)
+        best_val_psnr = 0.
+        self.train_loader = InstantUVDataLoader(
+            self.train_data, batch_size=self.config["training"]["batch_size"], shuffle=True
+        )
+        self.val_loader = InstantUVDataLoader(
+            self.val_data, batch_size=self.config["training"]["batch_size"], shuffle=False
+        )
         num_epochs = self.config["training"].get('epochs', 10)
         print("Length train loader:", len(self.train_loader))
         print("Length val loader:", len(self.val_loader))
-        
+
         for epoch in range(num_epochs):
             # Train for one epoch
             train_loss = self._train_epoch()
-            print(f"Epoch [{epoch+1}/{num_epochs}], Training Loss: {train_loss}")
+            print(f"Epoch [{epoch + 1}/{num_epochs}], Training Loss: {train_loss}")
 
             # Validation
             if epoch % self.config["training"].get("eval_every", 1000) == 0:
                 val_loss, val_psnr = self._validate_epoch()
                 print("Validation Loss:", val_loss, "Validation PSNR:", val_psnr)
-                if(val_loss < best_val):
-                    print("Saving model...")
-                    torch.save(model.state_dict(), "model.pt")
-            
+                if val_loss < best_val:
+                    best_val = val_loss
+                    print("Saving model best (val_error)...")
+                    # FIXME: Note i changed most of this to self.model (check if that was ok)
+                    torch.save(self.model.state_dict(), "model.pt")
+                    export_uv(self.model, "best_uv.png", resolution=self.uv_resolution)
+                if val_psnr > best_val_psnr:
+                    best_val_psnr = val_psnr
+                    print("Saving model best (val_psnr)...")
+                    torch.save(self.model.state_dict(), "model_psnr.pt")
+                    export_uv(self.model, "best_uv_psnr.png", resolution=self.uv_resolution)
+
     def _train_epoch(self):
         """
         Perform one epoch of training.
@@ -137,8 +147,9 @@ class Trainer:
         for batch in self.train_loader:
             loss = self._train_step(batch)
             running_loss += loss
-        
-        return running_loss/len(self.train_loader)
+
+        return running_loss / len(self.train_loader)
+
     def _train_step(self, batch):
         """
         Perform a single training step with the given batch of data.
@@ -152,11 +163,11 @@ class Trainer:
         self.optimizer.zero_grad()
         uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
         pred_rgb = self.model(uv)
-        
+
         loss = self.loss_fn(pred_rgb, target_rgb)
         loss.backward()
         self.optimizer.step()
-        
+
         return loss.item()
 
     def _validate_epoch(self):
@@ -171,7 +182,7 @@ class Trainer:
         """
         self.model.eval()
         running_loss = 0.0
-        
+
         with torch.no_grad():
             for batch in self.val_loader:
                 loss = self._validate_step(batch)
@@ -182,16 +193,19 @@ class Trainer:
         images_np, gts, masks = self.image_renderer.render_views(
             self.model,
             mesh_views_list=self.data_split["mesh_views_list_val"],
+            save_validation_images=False  # TODO: Make this a config arg (Saving takes ~2.2 of total 2.6 seconds
         )
         val_psnrs = np.zeros(len(images_np), dtype=np.float32)
-        for i, (image_pred, image_gt, mask) in enumerate(list(zip(images_np, gts, masks))): # FIXME this loop is super slow!!! fix this
+
+        # FIXME this loop is super slow!!! fix this / Note from moritz: its not slow lol
+        for i, (image_pred, image_gt, mask) in enumerate(list(zip(images_np, gts, masks))):
             val_psnrs[i] = compute_psnr(
                 image_gt[mask].astype("int16") / 255.0,  # FIXME: utype8 would mess up the calculation (CHECK)
                 image_pred[mask].astype("int16") / 255.0
             )
 
         val_psnr = np.mean(val_psnrs)
-        val_loss = running_loss/len(self.val_loader)
+        val_loss = running_loss / len(self.val_loader)
         return val_loss, val_psnr
 
     def _validate_step(self, batch):
@@ -210,6 +224,7 @@ class Trainer:
 
         return loss.item()
 
+
 def get_args():
     parser = argparse.ArgumentParser(description="Image benchmark using PyTorch bindings.")
 
@@ -221,6 +236,7 @@ def get_args():
 
     args = parser.parse_args()
     return args
+
 
 if __name__ == "__main__":
     args = get_args()
