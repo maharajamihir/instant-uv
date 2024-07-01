@@ -80,7 +80,12 @@ class Trainer:
 
         # FIXME would it also work if we just used nn.MSELoss? 
         # or does the normalizing improve this significantly?
-        self.loss_fn = lambda pred, target: ((pred - target.to(pred.dtype)) ** 2 / (pred.detach() ** 2 + 0.01)).mean()
+        self.loss = self.config["model"].get("loss", "L2").lower()
+        assert self.loss in ["l1", "l2"], "Loss must be either L1 or L2"
+        if self.loss == "l2":
+            self.loss_fn = lambda pred, target: ((pred - target.to(pred.dtype)) ** 2 / (pred.detach() ** 2 + 0.01)).mean()
+        elif self.loss == "l1":
+            self.loss_fn = lambda pred, target: torch.abs(pred - target.to(pred.dtype)).mean()
 
         uv_pkl_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv.pkl")
         xatlas_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "xatlas.obj")

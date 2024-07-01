@@ -16,11 +16,13 @@ data:
 
   render_img_directory: reports/
 model:
+  loss: "L1"  # zu training oder model?
   # TODO model config
 
 training:
   epochs: 300
-  eval_every: 1
+  eval_every: 2
   checkpoint_every: 20
   batch_size: 8000 # 65536  # 2**16
+
   
