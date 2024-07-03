@@ -16,8 +16,7 @@ from util.utils import load_mesh, load_cameras, load_obj_mask, LRUCache
 class ImageRenderer:
 
     # TODO: CHANGE THIS DEFAULT DATASET_PATH ITS JUST FOR DEBUGGING
-    def __init__(self, path_to_mesh, dataset_path="data/raw/human_dataset_v2_tiny/",
-                 uv_path="data/preprocessed/human_dataset_v2_tiny/train/uv.pkl",
+    def __init__(self, path_to_mesh, uv_path, dataset_path="data/raw/human_dataset_v2_tiny/",
                  cache_capacity=150,
                  verbose=False):
         self.mesh = load_mesh(path_to_mesh)
@@ -31,9 +30,12 @@ class ImageRenderer:
         self.obj_mask_cache = LRUCache(capacity=cache_capacity)
         self.hit_mask_cache = LRUCache(capacity=cache_capacity)
 
-        # TODO: Note we can also just use np.load and np.dump since uv is a np array :D instead of pickle
-        with open(uv_path, 'rb') as f:
-            self.uv = pickle.load(f)
+        # TODO: Make this prettier
+        if os.path.splitext(uv_path)[-1] == ".npy":
+            self.uv = np.load(uv_path)
+        else:
+            with open(uv_path, 'rb') as f:
+                self.uv = pickle.load(f)
 
     @staticmethod
     def calculate_rays(mesh_view_path: str, obj_mask: torch.Tensor, distortion_type=None, distortion_coeffs=None):
@@ -70,9 +72,17 @@ class ImageRenderer:
         return ray_origins, unit_ray_dirs
 
     @staticmethod
-    def calculate_rays_np(mesh_view_path: str, obj_mask: np.ndarray, distortion_type=None, distortion_coeffs=None):
+    def calculate_rays_np(mesh_view_path: str, obj_mask: np.ndarray, distortion_type=None, distortion_coeffs=None,
+                          scale=1):
         assert isinstance(obj_mask, np.ndarray), "obj_mask should be a numpy array."
         camCv2world, K = load_cameras(mesh_view_path, as_numpy=True)
+
+        # Scale
+        if scale > 1:
+            K[0, 0] *= scale  # fx
+            K[1, 1] *= scale  # fy
+            K[0, 2] *= scale  # cx
+            K[1, 2] *= scale  # cy
 
         xys = np.transpose(np.nonzero(obj_mask))
 
@@ -107,11 +117,12 @@ class ImageRenderer:
 
         return ray_origins_np, unit_ray_dirs
 
-    def render_views(self, model, mesh_views_list, save_validation_images):
+    def render_views(self, model, mesh_views_list, save_validation_images, scale=1):
         # TODO: This function name does not really reflect what it does since it does more than that
         images = []
         gts = []
         masks = []
+        scaled_ray_hit_counts = []
 
         # Define iterator
         iterator = tqdm(mesh_views_list) if self.verbose else mesh_views_list
@@ -125,6 +136,11 @@ class ImageRenderer:
                 obj_mask = load_obj_mask(mesh_view_path, as_numpy=True)
                 self.obj_mask_cache.put(mesh_view, obj_mask)
 
+            if scale:
+                obj_mask_scaled = np.repeat(np.repeat(obj_mask, scale, axis=0), scale, axis=1)
+            else:
+                obj_mask_scaled = obj_mask
+
             # Load gt image
             gt_img = self.gt_image_cache.get(mesh_view)
             if gt_img is None:
@@ -133,14 +149,15 @@ class ImageRenderer:
                 self.gt_image_cache.put(mesh_view, gt_img)
 
             # Init the rendered image
-            img = np.zeros(gt_img.shape, dtype=np.int16)
-            img[~obj_mask] = [0, 0, 0]
+            img = np.zeros((gt_img.shape[0] * scale, gt_img.shape[1] * scale, gt_img.shape[2]), dtype=np.int16)
+            img[~obj_mask_scaled] = [0, 0, 0]
+            scaled_ray_hit_count = np.zeros((gt_img.shape[0] * scale, gt_img.shape[1] * scale), dtype=np.int16)
 
             # Calculate the rays if we don't have uv_coords in the cache
             coords_2d_normalized = self.uv_cache.get(mesh_view)
             hit_mask = self.hit_mask_cache.get(mesh_view)
             if coords_2d_normalized is None or hit_mask is None:
-                ray_origins, unit_ray_dirs = self.calculate_rays_np(mesh_view_path, obj_mask)
+                ray_origins, unit_ray_dirs = self.calculate_rays_np(mesh_view_path, obj_mask_scaled, scale=scale)
 
                 vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, hit_mask = ray_mesh_intersect_np(
                     self.ray_mesh_intersector,
@@ -165,9 +182,11 @@ class ImageRenderer:
                 rgbs_normalized = model(
                     torch.from_numpy(coords_2d_normalized).to(model.params.device).detach()
                 ).clamp(0.0, 1.0)
-                rgbs_scaled = (rgbs_normalized * 255).type(torch.int16).cpu().numpy()
 
-                assert rgbs_scaled.max() <= 255, "idk if this should even happen"
+                rgbs_scaled = (rgbs_normalized * 255).type(torch.int16).cpu().numpy().clip(0, 255)
+
+                # Start with assumption that all rays hit
+                ray_hit_count = np.ones(hit_mask.shape[0])
 
                 # Pad if not all rays hit
                 if len(coords_2d_normalized) != len(hit_mask):
@@ -176,9 +195,13 @@ class ImageRenderer:
                     padded_rgbs_scaled[hit_mask] = rgbs_scaled
                     rgbs_scaled = padded_rgbs_scaled
 
+                    # Mark rays as hit accordingly
+                    ray_hit_count[~hit_mask] = 0
+
                 # Fill the image
-                img[obj_mask] = rgbs_scaled
+                img[obj_mask_scaled] = rgbs_scaled
                 img = img.astype(np.uint8)
+                scaled_ray_hit_count[obj_mask_scaled] = ray_hit_count
 
             if save_validation_images:
                 os.makedirs("reports/human", exist_ok=True)
@@ -188,29 +211,22 @@ class ImageRenderer:
             images.append(img)
             masks.append(obj_mask)
             gts.append(gt_img)
+            scaled_ray_hit_counts.append(scaled_ray_hit_count)
 
-        return images, gts, masks
+        return images, gts, masks, scaled_ray_hit_counts
 
 
-# TODO: THIS IS ONLY FOR DEBUGGING
-if __name__ == "__main__":
-    FILEPATH = Path(__file__)
+def downscale_image(image, hit_count, kernel_size=2):
+    conv_kernel = torch.ones((1, 1, kernel_size, kernel_size), dtype=torch.float32)
+    image_tensor = torch.tensor(image, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
+    hit_count_tensor = torch.tensor(hit_count, dtype=torch.float32).unsqueeze(0)
 
-    # Change into instant-uv folder
-    os.chdir(str(Path(__file__).parent.parent.parent))
-    sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
+    mask = torch.nn.functional.conv2d(hit_count_tensor, conv_kernel, stride=kernel_size)[0]
+    mask[mask == 0] = 1  # For division
 
-    # NOTE: This must be the XATLAS.obj!!! Aka new_mesh
-    ir = ImageRenderer(
-        path_to_mesh="data/preprocessed/human_dataset_v2_tiny/train/xatlas.obj",
-        dataset_path="data/raw/human_dataset_v2_tiny/",
-    )
-    # TODO: From config
-    ir.render_views(
-        ...,
-        ["human_val000",
-         "human_val001",
-         "human_val002",
-         "human_val003", ],
-        save_validation_images=True
-    )
+    # Perform convolution
+    r = torch.nn.functional.conv2d(image_tensor[:, 0:1, :, :], conv_kernel, stride=kernel_size)[0][0] / mask
+    g = torch.nn.functional.conv2d(image_tensor[:, 1:2, :, :], conv_kernel, stride=kernel_size)[0][0] / mask
+    b = torch.nn.functional.conv2d(image_tensor[:, 2:3, :, :], conv_kernel, stride=kernel_size)[0][0] / mask
+
+    return torch.stack((r, g, b)).permute(1, 2, 0).numpy().astype(np.uint8)

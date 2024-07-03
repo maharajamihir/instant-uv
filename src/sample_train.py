@@ -280,8 +280,8 @@ if __name__ == "__main__":
                                           network_config=tiny_nn_config["network"]).to(device)
 
     ir = ImageRenderer(xatlas_path,
-                       dataset_path=our_config["data"]["raw_data_path"],
-                       uv_path=uv_path)
+                       uv_path=uv_path,
+                       dataset_path=our_config["data"]["raw_data_path"])
     print(model)
 
     # ===================================================================================================

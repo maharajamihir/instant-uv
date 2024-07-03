@@ -14,7 +14,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from util.cameras import undistort_pixels_meshroom_radial_k3, DistortionTypes
-from util.utils import tensor_mem_size_in_bytes, load_mesh, map_to_UV, get_mapping
+from util.utils import tensor_mem_size_in_bytes, load_mesh, map_to_UV, get_mapping, get_mapping_blender
 
 
 def get_ray_mesh_intersector(mesh):
@@ -123,12 +123,16 @@ def ray_mesh_intersect_np(ray_mesh_intersector, mesh, ray_origins, ray_direction
                           return_hit_mask=False):
     # Compute the intersection points between the mesh and the rays
 
+    # NOTE: intersects_location converts to float64 and applies unitize to ray_directions
+    # intersect_any does not! Thus we need to apply it else we get different results!
+    ray_origins, ray_directions = ray_origins.astype(np.float64), ray_directions.astype(np.float64)
+
     # Note: It might happen that M <= N where M is the number of returned hits
     intersect_locs, hit_ray_idxs, face_idxs = \
         ray_mesh_intersector.intersects_location(ray_origins, ray_directions, multiple_hits=False)
 
     if return_hit_mask:
-        hit_mask = ray_mesh_intersector.intersects_any(ray_origins, ray_directions)
+        hit_mask = ray_mesh_intersector.intersects_any(ray_origins, trimesh.unitize(ray_directions))
 
     # Next, we need to determine the barycentric coordinates of the hit points.
 
@@ -347,11 +351,20 @@ class MeshViewPreProcessor:
 
         """
 
-        # get uv coordinates
-        mapping = get_mapping(self.mesh, self.split, self.config)
+        # TODO: HERE WE GET A NEW VARIABLE
+        uv_backend = self.config["training"].get("uv_backend", "blender").lower()
 
-        # FIXME: mapping, we must get the right object directly form get_mapping
-        uv_coords = map_to_UV(barycentric_coords, face_idxs, mapping)
+        if uv_backend == "blender":
+            # get uv coordinates
+            mapping = get_mapping_blender(self.mesh, self.split, self.config)
+            uv_coords = map_to_UV(barycentric_coords, face_idxs, mapping)
+
+        elif uv_backend == "xatlas":
+            # get uv coordinates
+            mapping = get_mapping(self.mesh, self.split, self.config)
+
+            # FIXME: mapping, we must get the right object directly form get_mapping
+            uv_coords = map_to_UV(barycentric_coords, face_idxs, mapping)
 
         # Choose the correct GTs and viewing directions for the hits.
         num_hits = hit_ray_idxs.size()[0]

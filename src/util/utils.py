@@ -336,6 +336,65 @@ def time_method(model, dummy_input, repetitions=300):
 
 
 #################################################
+def get_mapping_blender(mesh, split, config):
+    import bpy
+
+    # Replace with the path to your OBJ file
+    # obj_file = "/home/morkru/Desktop/Github/instant-uv/data/raw/human/RUST_3d_Low1.obj"
+    obj_file = str(Path(config["data"]["preproc_data_path"]) / split / "xatlas.obj")
+    new_mesh = load_mesh(obj_file)
+
+    blender_path = str(Path(config["data"]["preproc_data_path"]) / split / "blender_uv.npy")
+    if not os.path.isfile(blender_path):
+
+        # Clear existing scene data
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+
+        # Import OBJ file
+        bpy.ops.wm.obj_import(filepath=obj_file)
+
+        # Select all objects
+        bpy.ops.object.select_all(action='SELECT')
+
+        # Switch to Edit mode
+        bpy.ops.object.mode_set(mode='EDIT')
+
+        # Select all faces
+        bpy.ops.mesh.select_all(action='SELECT')
+
+        # Unwrap UVs
+        bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.000)
+
+        # Switch back to Object mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        me = bpy.context.object.data
+        uv_layer = me.uv_layers.active.data
+
+        vertex_id_to_uv = {}
+        for poly in me.polygons:
+            # FIXME: here we currently have an issue.
+            # FIXME: i think we need to map faces instead of vertices, so we use the face_idxs from ray intersect
+            # FIXME: Then get the vertex ids and then the uvs.
+            # FIXME: Because vertexids can have multiple uv coordinates (i think(?))))
+            print("Polygon", poly.index)
+            for li in poly.loop_indices:
+                vi = me.loops[li].vertex_index
+                vertex_id_to_uv[vi] = np.array(uv_layer[li].uv)
+
+        sorted_mapping = sorted(vertex_id_to_uv.items(), key=lambda x: x[0])
+        assert all([sorted_mapping[i][0] == i for i in range(len(sorted_mapping))]), "Misalignment detected."
+
+        blender_uv = np.stack(list(map(lambda x: x[1], sorted_mapping)))
+        np.save(blender_path, blender_uv, allow_pickle=False)
+        # Exit Blender
+        bpy.ops.wm.quit_blender()
+    else:
+        blender_uv = np.load(str(Path(config["data"]["preproc_data_path"]) / split / "blender_uv.npy"), allow_pickle=False)
+
+    new_mesh.visual = visual.texture.TextureVisuals(uv=blender_uv)
+    return new_mesh
+
 
 def get_mapping(mesh, split, config):
     """
@@ -359,7 +418,16 @@ def get_mapping(mesh, split, config):
     uv_path = str(Path(config["data"]["preproc_data_path"]) / split / "uv.pkl")
     if not os.path.isfile(xatlas_path):
         # Extract with xatlas
-        vmapping, indices, uvs = xatlas.parametrize(mesh.vertices, mesh.faces)
+        atlas = xatlas.Atlas()
+        atlas.add_mesh(mesh.vertices, mesh.faces)
+
+        chart_options = xatlas.ChartOptions()
+        pack_options = xatlas.PackOptions()
+        pack_options.padding = 4  # TODO: from config
+        atlas.generate(chart_options, pack_options)
+
+        vmapping, indices, uvs = atlas[0]
+        # vmapping, indices, uvs = xatlas.parametrize(mesh.vertices, mesh.faces)
         np.save(v_path, vmapping, allow_pickle=False)
 
         # maps original vertex to new vertex_id (in case we need it)
@@ -422,7 +490,7 @@ def map_to_UV(point_barys, face_idxs, mesh_with_mapping):
     return uv_coords
 
 
-def export_uv(model, path, resolution=(700,700), n_channels=3, device="cuda"):
+def export_uv(model, path, resolution=(700, 700), n_channels=3, device="cuda"):
     img_shape = resolution + torch.Size([n_channels])
 
     half_dx = 0.5 / resolution[0]
@@ -439,10 +507,35 @@ def export_uv(model, path, resolution=(700,700), n_channels=3, device="cuda"):
         rgbs_scaled = (rgbs * 255).clip(0, 255).astype(np.uint8)
         imageio.imwrite(path, rgbs_scaled)
 
-
     print("done.")
 
 
+def export_reference_image(dataset, path, resolution, device="cpu"):
+    # Get predictions for all that we have in dataset
+    input = dataset.uv.to(device)
+    pixel_xy = (input * torch.tensor(resolution, device=device)).long()
+    gt = dataset.rgb.to(device)
+    # Multiply predictions by 255 and convert to int in one step
+    scaled_gt = (gt * 255).type(torch.uint8)
+
+    # Flattened indices
+    indices_px = pixel_xy[:, 1] * resolution[0] + pixel_xy[:, 0]
+
+    # Initialize accumulators and count arrays
+    summed_values = torch.zeros((resolution[0] * resolution[1], 3), dtype=torch.float32, device=pixel_xy.device)
+    counts = torch.zeros((resolution[0] * resolution[1],), dtype=torch.int32, device=pixel_xy.device)
+
+    # Use scatter_add to sum values and count occurrences
+    summed_values.index_add_(0, indices_px, scaled_gt.float())
+    counts.index_add_(0, indices_px, torch.ones_like(indices_px, dtype=torch.int32))
+
+    # Avoid division by zero
+    nonzero_mask = counts > 0
+    summed_values[nonzero_mask] = summed_values[nonzero_mask] / counts[nonzero_mask].unsqueeze(1)
+    summed_values = summed_values.type(torch.uint8).reshape(*resolution, 3)
+
+    # Note: If we flip here we are in the right orientation for the output map if we visualize!!
+    imageio.imwrite(path, np.flipud(summed_values.cpu().numpy()))
 
 
 class LRUCache:

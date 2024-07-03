@@ -21,8 +21,15 @@ model:
 
 training:
   epochs: 300
-  eval_every: 2
+  eval_every: 10
   checkpoint_every: 20
-  batch_size: 8000 # 65536  # 2**16
+  batch_size: 2000
+  render_scale: 1
+  save_validation_images: true
+  uv_backend: xatlas
 
-  
+  uv_backend_options:  # TODO: Hier oder wo anders
+    xatlas: # TODO: Integrate these, for now just draft
+      padding: 4
+    blender:
+      padding: 4
