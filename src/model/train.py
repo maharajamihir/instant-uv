@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 
+import wandb
+
 import os
 import json
 import yaml
@@ -76,7 +78,9 @@ class Trainer:
             with open(data_split_path, "rb") as f:
                 self.data_split = yaml.safe_load(f)
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)  # FIXME get this from config
+        self.optimizer = torch.optim.Adam(self.model.parameters(),
+                                            lr=float(self.config["training"]["lr"]),
+                                            weight_decay=float(self.config["training"]["weight_decay"]))  # FIXME get this from config
 
         # FIXME would it also work if we just used nn.MSELoss? 
         # or does the normalizing improve this significantly?
@@ -121,11 +125,13 @@ class Trainer:
             # Train for one epoch
             train_loss = self._train_epoch()
             print(f"Epoch [{epoch + 1}/{num_epochs}], Training Loss: {train_loss}")
+            wandb.log({"epoch": epoch, "train_loss": train_loss})
 
             # Validation
             if epoch % self.config["training"].get("eval_every", 1000) == 0:
                 val_loss, val_psnr = self._validate_epoch()
                 print("Validation Loss:", val_loss, "Validation PSNR:", val_psnr)
+                wandb.log({"epoch": epoch, "val_loss": val_loss, "val_psnr": val_psnr})
                 if val_loss < best_val:
                     best_val = val_loss
                     print("Saving model best (val_error)...")
@@ -202,10 +208,9 @@ class Trainer:
         )
         val_psnrs = np.zeros(len(images_np), dtype=np.float32)
 
-        # FIXME this loop is super slow!!! fix this / Note from moritz: its not slow lol
         for i, (image_pred, image_gt, mask) in enumerate(list(zip(images_np, gts, masks))):
             val_psnrs[i] = compute_psnr(
-                image_gt[mask].astype("int16") / 255.0,  # FIXME: utype8 would mess up the calculation (CHECK)
+                image_gt[mask].astype("int16") / 255.0,  # FIXME: utype8 would mess up the calculation (CHECK) / Note from Mihir: yes it messes it up, need int16
                 image_pred[mask].astype("int16") / 255.0
             )
 
@@ -251,6 +256,14 @@ if __name__ == "__main__":
         tiny_nn_config = json.load(tiny_nn_config_file)
 
     model = InstantUV(tiny_nn_config)
+
+
+    # start a new wandb run to track this script
+    wandb.init(
+        project="instant-uv",
+        # track hyperparameters and run metadata
+        config=config
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     trainer = Trainer(model, config, device)

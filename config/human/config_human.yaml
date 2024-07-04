@@ -16,13 +16,13 @@ data:
 
   render_img_directory: reports/
 model:
-  loss: "L1"  # zu training oder model?
+  loss: "L1"  # zu training oder model? FIXME training would be better imo
   # TODO model config
 
 training:
+  lr: 1e-3
+  weight_decay: 5e-5
   epochs: 300
   eval_every: 2
   checkpoint_every: 20
-  batch_size: 8000 # 65536  # 2**16
-
-  
+  batch_size: 4000 # 65536  # 2**16
