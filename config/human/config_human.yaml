@@ -20,11 +20,11 @@ model:
   # TODO model config
 
 training:
-  epochs: 300
-  eval_every: 10
+  epochs: 2000
+  eval_every: 200
   checkpoint_every: 20
-  batch_size: 2000
-  render_scale: 1
+  batch_size: 500000
+  render_scale: 2
   save_validation_images: true
   uv_backend: xatlas
 

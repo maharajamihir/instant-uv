@@ -14,7 +14,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from util.cameras import undistort_pixels_meshroom_radial_k3, DistortionTypes
-from util.utils import tensor_mem_size_in_bytes, load_mesh, map_to_UV, get_mapping, get_mapping_blender
+from util.utils import tensor_mem_size_in_bytes, load_mesh, map_to_UV, get_mapping, get_mapping_blender, \
+    map_to_UV_blender, normalize_values
 
 
 def get_ray_mesh_intersector(mesh):
@@ -293,6 +294,9 @@ class MeshViewPreProcessor:
         self.cache_face_idxs = []
         self.cache_uv_coords = []
 
+        self.cache_angles = []
+        self.cache_angles2 = []
+
     def _ray_mesh_intersect(self, ray_origins, ray_directions, return_depth=False, camCv2world=None):
         # TODO instead of doing simple ray mesh intersection, we are interested in the x,y,z coordinates
         # TODO change to ray_tracing_xyz and retrieve x,y,z coordinates
@@ -357,7 +361,7 @@ class MeshViewPreProcessor:
         if uv_backend == "blender":
             # get uv coordinates
             mapping = get_mapping_blender(self.mesh, self.split, self.config)
-            uv_coords = map_to_UV(barycentric_coords, face_idxs, mapping)
+            uv_coords = map_to_UV_blender(barycentric_coords, face_idxs, vertex_idxs_of_hit_faces, mapping)
 
         elif uv_backend == "xatlas":
             # get uv coordinates
@@ -370,6 +374,36 @@ class MeshViewPreProcessor:
         num_hits = hit_ray_idxs.size()[0]
         expected_rgbs = expected_rgbs[hit_ray_idxs]
         unit_ray_dirs = unit_ray_dirs[hit_ray_idxs]
+
+        """ NORMALS """
+        vertices_of_hit_faces = np.array(self.mesh.vertices[vertex_idxs_of_hit_faces])
+        coords_3d = np.sum(barycentric_coords.numpy()[:, :, np.newaxis] * vertices_of_hit_faces, axis=1)
+
+        camera_center = ray_origins[0].numpy()
+        intersect_to_cam = camera_center - coords_3d
+        lengths = np.linalg.norm(intersect_to_cam, axis=1)
+        lengths[lengths == 0] = 1
+        lengths = lengths[:, np.newaxis]
+        intersect_to_cam = intersect_to_cam / lengths
+        normals = self.mesh.face_normals[face_idxs]
+
+        dp = np.einsum('ij,ij->i', normals, intersect_to_cam)
+        angles = np.arccos(dp)
+        angles_degrees = np.degrees(angles)  # Unused
+        angles_normalized_0_1 = angles / (np.pi / 2)
+
+        # 2_angle
+        # Project vectors onto the x-y plane
+        u_xy = np.array([normals[:, 0], normals[:, 1], np.zeros(len(normals))]).transpose()
+        v_xy = np.array([intersect_to_cam[:, 0], intersect_to_cam[:, 1], np.zeros(len(intersect_to_cam))]).transpose()
+
+        # Calculate the dot products and cross products
+        dot_product_xy = np.einsum('ij,ij->i', u_xy, v_xy)  # Dot product of projections
+        cross_product_xy = np.cross(u_xy, v_xy)
+        azimuth = np.arctan2(np.linalg.norm(cross_product_xy, axis=1), dot_product_xy)
+        elevation = np.arcsin(np.einsum('ij,j->i', np.cross(normals, intersect_to_cam), np.array([0, 0, 1])))
+        azimuth_n = normalize_values(azimuth, -np.pi, np.pi)
+        elevation_n = normalize_values(elevation, -np.pi / 2, np.pi / 2)
 
         # Some clean up to free memory
         del ray_origins, hit_ray_idxs, mask, img
@@ -387,6 +421,11 @@ class MeshViewPreProcessor:
         unit_ray_dirs = unit_ray_dirs.to(torch.float32)
         uv_coords = uv_coords.to(torch.float32)  # FIXME check if this works
 
+        """ Angles """
+        angles_normalized_0_1 = torch.from_numpy(angles_normalized_0_1).to(torch.float32)
+        azimuth_n = torch.from_numpy(azimuth_n).to(torch.float32)
+        elevation_n = torch.from_numpy(elevation_n).to(torch.float32)
+
         # And finally, we store the results in the cache
         for idx in range(num_hits):
             self.cache_face_idxs.append(face_idxs[idx])
@@ -395,6 +434,8 @@ class MeshViewPreProcessor:
             self.cache_expected_rgbs.append(expected_rgbs[idx])
             self.cache_unit_ray_dirs.append(unit_ray_dirs[idx])
             self.cache_uv_coords.append(uv_coords[idx])
+            self.cache_angles.append(angles_normalized_0_1[idx])
+            self.cache_angles2.append(torch.from_numpy(np.array([azimuth_n[idx], elevation_n[idx]])))
 
     def write_to_disk(self):
         print("Starting to write to disk...")
@@ -445,4 +486,19 @@ class MeshViewPreProcessor:
             f"Unit Ray Dirs: dim={self.cache_unit_ray_dirs.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_unit_ray_dirs)}B, dtype={self.cache_unit_ray_dirs.dtype}")
         np.save(os.path.join(self.out_dir, "unit_ray_dirs.npy"), self.cache_unit_ray_dirs, allow_pickle=False)
         del self.cache_unit_ray_dirs
+        gc.collect()  # Force garbage collection
+
+        """Angles"""
+        self.cache_angles = torch.stack(self.cache_angles)
+        print(
+            f"Angles: dim={self.cache_angles.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_angles)}B, dtype={self.cache_angles.dtype}")
+        np.save(os.path.join(self.out_dir, "cache_angles.npy"), self.cache_angles, allow_pickle=False)
+        del self.cache_angles
+        gc.collect()  # Force garbage collection
+
+        self.cache_angles2 = torch.stack(self.cache_angles2)
+        print(
+            f"Angles(2): dim={self.cache_angles2.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_angles2)}B, dtype={self.cache_angles2.dtype}")
+        np.save(os.path.join(self.out_dir, "cache_angles2.npy"), self.cache_angles2, allow_pickle=False)
+        del self.cache_angles2
         gc.collect()  # Force garbage collection

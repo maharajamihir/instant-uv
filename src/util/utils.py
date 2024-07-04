@@ -341,17 +341,26 @@ def get_mapping_blender(mesh, split, config):
 
     # Replace with the path to your OBJ file
     # obj_file = "/home/morkru/Desktop/Github/instant-uv/data/raw/human/RUST_3d_Low1.obj"
-    obj_file = str(Path(config["data"]["preproc_data_path"]) / split / "xatlas.obj")
-    new_mesh = load_mesh(obj_file)
+    # obj_file = str(Path(config["data"]["preproc_data_path"]) / split / "xatlas.obj")
+    # new_mesh = load_mesh(obj_file)
 
-    blender_path = str(Path(config["data"]["preproc_data_path"]) / split / "blender_uv.npy")
+    tmp_path = str(Path(config["data"]["preproc_data_path"]) / split / "mesh_tmp.obj")
+    # We must export because else blender will import non-triangle mesh
+    mesh.export(tmp_path)
+
+    # THESE ASSERTIONS MUST HOLD!!!
+    # mesh2 = load_mesh(tmp_path)
+    # assert (np.array(mesh2.vertices) == np.array(mesh.vertices)).sum() == mesh.vertices.shape[0] * mesh.vertices.shape[1]
+    # assert (np.array(mesh2.faces) == np.array(mesh.faces)).sum() == mesh.faces.shape[0] * mesh.faces.shape[1]
+
+    blender_path = str(Path(config["data"]["preproc_data_path"]) / split / "blender_uv.pkl")
     if not os.path.isfile(blender_path):
 
         # Clear existing scene data
         bpy.ops.wm.read_factory_settings(use_empty=True)
 
         # Import OBJ file
-        bpy.ops.wm.obj_import(filepath=obj_file)
+        bpy.ops.wm.obj_import(filepath=tmp_path)
 
         # Select all objects
         bpy.ops.object.select_all(action='SELECT')
@@ -363,7 +372,7 @@ def get_mapping_blender(mesh, split, config):
         bpy.ops.mesh.select_all(action='SELECT')
 
         # Unwrap UVs
-        bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.000)
+        bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.2)
 
         # Switch back to Object mode
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -371,29 +380,34 @@ def get_mapping_blender(mesh, split, config):
         me = bpy.context.object.data
         uv_layer = me.uv_layers.active.data
 
-        vertex_id_to_uv = {}
+        face_id_to_uv_mapping = {}
+        face_mapping = {}
         for poly in me.polygons:
-            # FIXME: here we currently have an issue.
-            # FIXME: i think we need to map faces instead of vertices, so we use the face_idxs from ray intersect
-            # FIXME: Then get the vertex ids and then the uvs.
-            # FIXME: Because vertexids can have multiple uv coordinates (i think(?))))
             print("Polygon", poly.index)
+
+            # Find out what face we are
+            face = sorted([v for v in poly.vertices])
+
+            # For each particular face we get its own mapping
+            vertex_to_uv_mini = {}
             for li in poly.loop_indices:
                 vi = me.loops[li].vertex_index
-                vertex_id_to_uv[vi] = np.array(uv_layer[li].uv)
+                vertex_to_uv_mini[vi] = np.array(uv_layer[li].uv)
+            face_mapping[str(face)] = vertex_to_uv_mini
 
-        sorted_mapping = sorted(vertex_id_to_uv.items(), key=lambda x: x[0])
-        assert all([sorted_mapping[i][0] == i for i in range(len(sorted_mapping))]), "Misalignment detected."
+        for i, f in enumerate(mesh.faces):
+            key = str(sorted(f))
+            face_id_to_uv_mapping[i] = face_mapping[key]
 
-        blender_uv = np.stack(list(map(lambda x: x[1], sorted_mapping)))
-        np.save(blender_path, blender_uv, allow_pickle=False)
+        blender_uv = face_id_to_uv_mapping
+        with open(blender_path, 'wb') as f:
+            pickle.dump(blender_uv, f)
         # Exit Blender
         bpy.ops.wm.quit_blender()
     else:
-        blender_uv = np.load(str(Path(config["data"]["preproc_data_path"]) / split / "blender_uv.npy"), allow_pickle=False)
-
-    new_mesh.visual = visual.texture.TextureVisuals(uv=blender_uv)
-    return new_mesh
+        with open(blender_path, 'rb') as f:
+            blender_uv = pickle.load(f)
+    return blender_uv
 
 
 def get_mapping(mesh, split, config):
@@ -424,7 +438,12 @@ def get_mapping(mesh, split, config):
         chart_options = xatlas.ChartOptions()
         pack_options = xatlas.PackOptions()
         pack_options.padding = 4  # TODO: from config
+        chart_options.max_cost = 2  # TODO: from config, larger cost == larger areas on the chart
+        chart_options.fix_winding = True
+
+        print("Generating chart...")
         atlas.generate(chart_options, pack_options)
+        print("Complete.")
 
         vmapping, indices, uvs = atlas[0]
         # vmapping, indices, uvs = xatlas.parametrize(mesh.vertices, mesh.faces)
@@ -457,6 +476,41 @@ def get_mapping(mesh, split, config):
 
     new_mesh.visual = visual.texture.TextureVisuals(uv=uvs)
     return new_mesh  # return mesh object with the uv mapping
+
+
+def map_to_UV_blender(point_barys, face_idxs, vertex_idxs_of_hit_faces, mapping_dict):
+    """
+    TODO: Implement the function to map bary points (point_bary) to 2D UV coordinates.
+
+    This function should take a 3D point or a list of 3D points represented in
+    Cartesian coordinates (x, y, z) and map them to 2D UV coordinates. The exact
+    transformation will depend on the specifics of the UV mapping, which might
+    involve perspective projection, orthographic projection, or another method
+    suited to the particular application.
+
+    Args:
+        point_xyz (tuple or list of tuples): A tuple (x, y, z) representing a 3D point or a list of such tuples.
+        Preferably torch tensors or numpy arrays!
+        mapping (TODO define): The mapping in some way. Might be a function or an array or so that maps xyz points to 2d coordinates. Need to check how we implement this
+
+    Returns:
+        tuple or list of tuples: A tuple (u, v) representing the 2D UV coordinates or a list of such tuples.
+        Return torch tensors if possible
+    """
+
+    uvs = []
+    for fid, vids, in zip(face_idxs, vertex_idxs_of_hit_faces):
+        mapping = mapping_dict.get(int(fid))
+        uv = np.array([mapping.get(int(v)) for v in vids])
+        assert None not in uv, "something went wrong."
+        uvs.append(uv)
+
+    uv_vertices_of_hit_faces = np.stack(uvs)
+    # Note: we can simply use the same barycentric coords since its all linear
+    # FIXME: torch->np->torch is shit
+    uv_coords = torch.from_numpy(np.sum(point_barys.numpy()[:, :, np.newaxis] * uv_vertices_of_hit_faces, axis=1))
+
+    return uv_coords
 
 
 def map_to_UV(point_barys, face_idxs, mesh_with_mapping):
@@ -503,6 +557,8 @@ def export_uv(model, path, resolution=(700, 700), n_channels=3, device="cuda"):
 
     print(f"Writing uv: '{path}'... ", end="")
     with torch.no_grad():
+        if model.model.n_input_dims != 2:  # TODO: THIS IS TEMPORARY
+            xy = torch.cat((xy, (torch.ones(len(xy)) * 0.5).to(xy.device).unsqueeze(1)), dim=1)
         rgbs = np.flipud(model(xy).reshape(img_shape).clamp(0.0, 1.0).detach().cpu().numpy())
         rgbs_scaled = (rgbs * 255).clip(0, 255).astype(np.uint8)
         imageio.imwrite(path, rgbs_scaled)
@@ -555,3 +611,8 @@ class LRUCache:
         self.cache[key] = value
         if len(self.cache) > self.capacity:
             self.cache.popitem(last=False)
+
+
+def normalize_values(values, min_val, max_val):
+    """ Normalize values to the range [0, 1] """
+    return (values - min_val) / (max_val - min_val)

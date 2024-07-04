@@ -23,7 +23,7 @@ sys.path.append(SCRIPTS_DIR)
 from data.dataset import InstantUVDataset, InstantUVDataLoader
 from util.render import ImageRenderer, downscale_image
 from util.utils import compute_psnr, load_config, export_uv, export_reference_image
-from model import InstantUV
+from model import InstantUV, InstantUV_VD1
 
 
 class Trainer:
@@ -147,14 +147,19 @@ class Trainer:
         train_expected_rgbs = np.load(train_rgb_path)
         train_bary_coords = np.load(train_bary_path)
 
+        """Angles"""
+        train_angles = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "cache_angles.npy"))
+        train_angles2 = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "cache_angles2.npy"))
+
         self.uv_resolution = (1024 * 2, 1024 * 2)  # TODO: Make this config arg
         self.uv_preprocess_resolution = (1024 * 2, 1024 * 2)  # (1536, 1536)
 
         # FIXME: PREPROCESSING!!! PT2
         # FIXME: Note to mihir. I don't know if this does anything, feel free to experiment with commenting in/out
-        train_expected_rgbs = self.preprocess_dataset(uv=train_uv_coords, rgb=train_expected_rgbs)
+        # train_expected_rgbs = self.preprocess_dataset(uv=train_uv_coords, rgb=train_expected_rgbs)
 
-        self.train_data = InstantUVDataset(uv=train_uv_coords, rgb=train_expected_rgbs, points_xyz=train_bary_coords)
+        self.train_data = InstantUVDataset(uv=train_uv_coords, rgb=train_expected_rgbs, points_xyz=train_bary_coords,
+                                           angles=train_angles)
 
         """ DEBUG END """
         # Load val data 
@@ -164,7 +169,10 @@ class Trainer:
         val_uv_coords = np.load(val_uv_path)
         val_expected_rgbs = np.load(val_rgb_path)
         val_bary_coords = np.load(val_bary_path)
-        self.val_data = InstantUVDataset(uv=val_uv_coords, rgb=val_expected_rgbs, points_xyz=val_bary_coords)
+
+        val_angles = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "cache_angles.npy"))
+        self.val_data = InstantUVDataset(uv=val_uv_coords, rgb=val_expected_rgbs, points_xyz=val_bary_coords,
+                                         angles=val_angles)
         data_split_path = config.get("data", {}).get("data_split")
         if data_split_path:
             with open(data_split_path, "rb") as f:
@@ -187,8 +195,8 @@ class Trainer:
         self.uv_backend = self.config["training"].get("uv_backend", "blender").lower()
         # TODO: Refactor all this shit its HORRIBLE
         if self.uv_backend == "blender":
-            uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "blender_uv.npy")
-            path_to_mesh = xatlas_path  # self.config["data"]["mesh_path"]
+            uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "blender_uv.pkl")
+            path_to_mesh = self.config["data"]["mesh_path"]
         else:
             uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv.pkl")
             path_to_mesh = xatlas_path
@@ -273,6 +281,9 @@ class Trainer:
         """
         self.optimizer.zero_grad()
         uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
+        if "angles" in batch.keys():
+            angles = batch["angles"].to(self.device)
+            uv = torch.cat((uv, angles.unsqueeze(1)), dim=1)
         pred_rgb = self.model(uv)
 
         loss = self.loss_fn(pred_rgb, target_rgb)
@@ -336,6 +347,10 @@ class Trainer:
             loss: The loss value for the validation step.
         """
         uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
+        if "angles" in batch.keys():
+            angles = batch["angles"].to(self.device)
+            uv = torch.cat((uv, angles.unsqueeze(1)), dim=1)
+
         pred_rgb = self.model(uv)
         loss = self.loss_fn(pred_rgb, target_rgb)
 
@@ -362,7 +377,7 @@ if __name__ == "__main__":
     with open(args.tiny_nn_config) as tiny_nn_config_file:
         tiny_nn_config = json.load(tiny_nn_config_file)
 
-    model = InstantUV(tiny_nn_config)
+    model = InstantUV_VD1(tiny_nn_config)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     trainer = Trainer(model, config, device)

@@ -53,6 +53,35 @@ def preprocess_views(mesh_view_pre_proc, mesh_views_list_train, dataset_path):
         # Preprocess and cache the current view
         mesh_view_pre_proc.cache_single_view(camCv2world, K, obj_mask, img)
 
+        #
+        # """ DEBUG ONLY"""
+        # """ DEBUG ONLY"""
+        #
+        # uv_coords = np.stack(mesh_view_pre_proc.cache_uv_coords)
+        # expected_rgbs = np.stack(mesh_view_pre_proc.cache_expected_rgbs)
+        #
+        # # Lets try only the legs
+        # vertices_of_hit_faces = mesh_view_pre_proc.mesh.vertices[np.stack(mesh_view_pre_proc.cache_vertex_idxs_of_hit_faces)]
+        # coords_3d = np.sum(np.stack(mesh_view_pre_proc.cache_barycentric_coords)[:, :, np.newaxis] * vertices_of_hit_faces,
+        #                    axis=1)  # TODO might need to integrate this into the pipeline as well
+        #
+        # mask = coords_3d[:, 2] < 0
+        # coords_3d = coords_3d[mask]
+        # uv_coords = uv_coords[mask]
+        # expected_rgbs = expected_rgbs[mask]
+        #
+        # # Maybe we need to flip???
+        # # uv_coords = np.flip(uv_coords, axis=1).copy()
+        # """ DEBUG END"""
+        #
+        # import trimesh
+        # # Sanity-Check visualization
+        # trimesh.PointCloud(vertices=coords_3d, colors=expected_rgbs * 255).show(
+        # line_settings={'point_size': 5}
+        # )
+
+
+
     mesh_view_pre_proc.write_to_disk()
 
 

@@ -30,6 +30,8 @@ class ImageRenderer:
         self.obj_mask_cache = LRUCache(capacity=cache_capacity)
         self.hit_mask_cache = LRUCache(capacity=cache_capacity)
 
+        self.angles_cache = LRUCache(capacity=cache_capacity)
+
         # TODO: Make this prettier
         if os.path.splitext(uv_path)[-1] == ".npy":
             self.uv = np.load(uv_path)
@@ -156,7 +158,8 @@ class ImageRenderer:
             # Calculate the rays if we don't have uv_coords in the cache
             coords_2d_normalized = self.uv_cache.get(mesh_view)
             hit_mask = self.hit_mask_cache.get(mesh_view)
-            if coords_2d_normalized is None or hit_mask is None:
+            angles_normalized_0_1 = self.angles_cache.get(mesh_view)
+            if coords_2d_normalized is None or hit_mask is None or angles_normalized_0_1 is None:
                 ray_origins, unit_ray_dirs = self.calculate_rays_np(mesh_view_path, obj_mask_scaled, scale=scale)
 
                 vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, hit_mask = ray_mesh_intersect_np(
@@ -168,17 +171,58 @@ class ImageRenderer:
                     return_hit_mask=True
                 )
 
-                uv_vertices_of_hit_faces = self.uv[vertex_idxs_of_hit_faces]
-                coords_2d_normalized = np.sum(
-                    barycentric_coords[:, :, np.newaxis] * uv_vertices_of_hit_faces,
-                    axis=1
-                )
+                is_blender = True if isinstance(self.uv, dict) else False  # TODO: THIS IS TEMPORARY!!!!!!!!!
+
+                if is_blender:  # TODO: THIS IS ALL TEMPORARY!!!
+                    # NOTE: COPIED FROM map_uv_to_blender!!!!!!! BUT DOES NOT WORK BECAUSE HERE WE HAVE ONLY NPARRAY!!
+                    uvs = []
+                    for fid, vids, in zip(face_idxs, vertex_idxs_of_hit_faces):
+                        mapping = self.uv.get(int(fid))
+                        uv = np.array([mapping.get(int(v)) for v in vids])
+                        assert None not in uv, "something went wrong."
+                        uvs.append(uv)
+
+                    uv_vertices_of_hit_faces = np.stack(uvs)
+                    # Note: we can simply use the same barycentric coords since its all linear
+                    # FIXME: torch->np->torch is shit
+                    coords_2d_normalized = np.sum(barycentric_coords[:, :, np.newaxis] * uv_vertices_of_hit_faces,
+                                                  axis=1)
+                else:
+                    uv_vertices_of_hit_faces = self.uv[vertex_idxs_of_hit_faces]
+                    coords_2d_normalized = np.sum(
+                        barycentric_coords[:, :, np.newaxis] * uv_vertices_of_hit_faces,
+                        axis=1
+                    )
+
+                """NORMALS"""  # TODO: CACHE FIXME: COPIED FROM PREPROCESSING!!! MAKE FUNCTIONS!!!
+                vertices_of_hit_faces = np.array(self.mesh.vertices[vertex_idxs_of_hit_faces])
+                coords_3d = np.sum(barycentric_coords[:, :, np.newaxis] * vertices_of_hit_faces, axis=1)
+
+                camera_center = ray_origins[0]
+                intersect_to_cam = camera_center - coords_3d
+                lengths = np.linalg.norm(intersect_to_cam, axis=1)
+                lengths[lengths == 0] = 1
+                lengths = lengths[:, np.newaxis]
+                intersect_to_cam = intersect_to_cam / lengths
+                normals = self.mesh.face_normals[face_idxs]
+
+                dp = np.einsum('ij,ij->i', normals, intersect_to_cam)
+                angles = np.arccos(dp)
+                angles_degrees = np.degrees(angles)  # Unused
+                angles_normalized_0_1 = angles / (np.pi / 2)
+
                 self.uv_cache.put(mesh_view, coords_2d_normalized)
                 self.hit_mask_cache.put(mesh_view, hit_mask)
+                self.angles_cache.put(mesh_view, angles_normalized_0_1)
 
             # TODO: Use proper methods
             with torch.no_grad():
                 # CLAMP IMPORTANT!!
+                if model.model.n_input_dims != 2:  # TODO: THIS IS TEMPORARY
+                    coords_2d_normalized = np.concatenate(
+                        (coords_2d_normalized, angles_normalized_0_1.reshape(-1, 1)),
+                        axis=1
+                    )
                 rgbs_normalized = model(
                     torch.from_numpy(coords_2d_normalized).to(model.params.device).detach()
                 ).clamp(0.0, 1.0)
