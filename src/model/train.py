@@ -43,7 +43,7 @@ class Trainer:
         val_loader: DataLoader for validation data.
     """
 
-    def __init__(self, model, config, device):
+    def __init__(self, model, config, tiny_nn_config, device):
         """
         Initialize the Trainer with the given model and configuration.
 
@@ -55,6 +55,7 @@ class Trainer:
         self.device = device
         self.model = model.to(self.device)
         self.config = config
+        self.tiny_nn_config = tiny_nn_config
 
         # Load train data
         train_uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv_coords.npy")
@@ -80,7 +81,11 @@ class Trainer:
 
         self.optimizer = torch.optim.Adam(self.model.parameters(),
                                             lr=float(self.config["training"]["lr"]),
-                                            weight_decay=float(self.config["training"]["weight_decay"]))  # FIXME get this from config
+                                            betas=(float(self.config["training"]["beta1"]), float(self.config["training"]["beta2"])),
+                                            eps=float(self.config["training"]["epsilon"]),
+                                            weight_decay=float(self.config["training"]["weight_decay"])
+                                            
+                                            )  # FIXME get this from config
 
         # FIXME would it also work if we just used nn.MSELoss? 
         # or does the normalizing improve this significantly?
@@ -266,5 +271,5 @@ if __name__ == "__main__":
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    trainer = Trainer(model, config, device)
+    trainer = Trainer(model, config, tiny_nn_config, device)
     trainer.train()

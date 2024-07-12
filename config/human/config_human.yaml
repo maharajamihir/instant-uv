@@ -20,9 +20,12 @@ model:
   # TODO model config
 
 training:
-  lr: 1e-3
-  weight_decay: 5e-5
-  epochs: 300
-  eval_every: 2
+  lr: 5e-3
+  beta1: 0.9
+  beta2: 0.99
+  epsilon: 1e-15
+  weight_decay: 1e-5
+  epochs: 200
+  eval_every: 10
   checkpoint_every: 20
-  batch_size: 4000 # 65536  # 2**16
+  batch_size: 65536  # 2**16
