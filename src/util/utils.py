@@ -359,7 +359,16 @@ def get_mapping(mesh, split, config):
     uv_path = str(Path(config["data"]["preproc_data_path"]) / split / "uv.pkl")
     if not os.path.isfile(xatlas_path):
         # Extract with xatlas
-        vmapping, indices, uvs = xatlas.parametrize(mesh.vertices, mesh.faces)
+        atlas = xatlas.Atlas()
+        atlas.add_mesh(mesh.vertices, mesh.faces)
+
+        chart_options = xatlas.ChartOptions()
+        pack_options = xatlas.PackOptions()
+        pack_options.padding = 6  # TODO: from config
+        atlas.generate(chart_options, pack_options)
+
+        vmapping, indices, uvs = atlas[0]
+        # vmapping, indices, uvs = xatlas.parametrize(mesh.vertices, mesh.faces)
         np.save(v_path, vmapping, allow_pickle=False)
 
         # maps original vertex to new vertex_id (in case we need it)

@@ -25,7 +25,7 @@ training:
   beta2: 0.99
   epsilon: 1e-15
   weight_decay: 1e-5
-  epochs: 200
+  epochs: 350
   eval_every: 10
   checkpoint_every: 20
   batch_size: 65536  # 2**16

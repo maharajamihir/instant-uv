@@ -12,7 +12,7 @@
 	},
 	"encoding": {
 		"otype": "HashGrid",
-		"n_levels": 8,
+		"n_levels": 10,
 		"n_features_per_level": 2,
 		"log2_hashmap_size": 15,
 		"base_resolution": 16,
@@ -21,7 +21,7 @@
 	"network": {
 		"otype": "FullyFusedMLP",
 		"activation": "ReLU",
-		"output_activation": "None",
+		"output_activation": "Sigmoid",
 		"n_neurons": 64,
 		"n_hidden_layers": 2
 	}
