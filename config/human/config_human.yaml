@@ -7,7 +7,8 @@ experiment:
 data:
   raw_data_path: data/raw/human_dataset_v2_tiny/
   preproc_data_path: data/preprocessed/human_dataset_v2_tiny/
-  mesh_path: data/raw/human/RUST_3d_Low1.obj
+  # mesh_path: data/raw/human/RUST_3d_Low1.obj
+  mesh_path: data/preprocessed/human_dataset_v2_tiny/train/triangle.obj
   img_height: 512
   img_width: 512
   data_split: config/human/data_split.yaml
@@ -21,12 +22,12 @@ model:
 
 training:
   epochs: 2000
-  eval_every: 200
+  eval_every: 10
   checkpoint_every: 20
-  batch_size: 500000
-  render_scale: 2
-  save_validation_images: true
-  uv_backend: xatlas
+  batch_size: 1000
+  render_scale: 1
+  save_validation_images: false
+  uv_backend: xatlas # OR BLENDER
 
   uv_backend_options:  # TODO: Hier oder wo anders
     xatlas: # TODO: Integrate these, for now just draft

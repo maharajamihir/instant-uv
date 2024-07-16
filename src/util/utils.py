@@ -342,11 +342,15 @@ def get_mapping_blender(mesh, split, config):
     # Replace with the path to your OBJ file
     # obj_file = "/home/morkru/Desktop/Github/instant-uv/data/raw/human/RUST_3d_Low1.obj"
     # obj_file = str(Path(config["data"]["preproc_data_path"]) / split / "xatlas.obj")
+    assert False, "Also nur als info: Hier muss man je aktuell noch je nachdem ob human oder cat dann entweder triangle.obj (human) oder triangle_cat nehmen. Diese wurden aktuell noch manuell aus blender exportiert. Deswegen ist ein teil auch in blender (utils.py) "
+    obj_file = "/home/morkru/Desktop/Github/instant-uv/data/preprocessed/human_dataset_v2_tiny/train/triangle.obj"
+    # obj_file = "/home/morkru/Desktop/Github/instant-uv/data/preprocessed/triangle_CAT.obj"
     # new_mesh = load_mesh(obj_file)
 
-    tmp_path = str(Path(config["data"]["preproc_data_path"]) / split / "mesh_tmp.obj")
+    # Hier das war vorher
+    # tmp_path = str(Path(config["data"]["preproc_data_path"]) / split / "mesh_tmp.obj")
     # We must export because else blender will import non-triangle mesh
-    mesh.export(tmp_path)
+    # mesh.export(tmp_path)
 
     # THESE ASSERTIONS MUST HOLD!!!
     # mesh2 = load_mesh(tmp_path)
@@ -360,7 +364,7 @@ def get_mapping_blender(mesh, split, config):
         bpy.ops.wm.read_factory_settings(use_empty=True)
 
         # Import OBJ file
-        bpy.ops.wm.obj_import(filepath=tmp_path)
+        bpy.ops.wm.obj_import(filepath=obj_file)
 
         # Select all objects
         bpy.ops.object.select_all(action='SELECT')
@@ -372,7 +376,9 @@ def get_mapping_blender(mesh, split, config):
         bpy.ops.mesh.select_all(action='SELECT')
 
         # Unwrap UVs
-        bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.2)
+        #bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.2)
+        # Lets try transform to triangles
+        # bpy.ops.mesh.quads_convert_to_tris(quad_method='BEAUTY', ngon_method='BEAUTY')
 
         # Switch back to Object mode
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -438,8 +444,6 @@ def get_mapping(mesh, split, config):
         chart_options = xatlas.ChartOptions()
         pack_options = xatlas.PackOptions()
         pack_options.padding = 4  # TODO: from config
-        chart_options.max_cost = 2  # TODO: from config, larger cost == larger areas on the chart
-        chart_options.fix_winding = True
 
         print("Generating chart...")
         atlas.generate(chart_options, pack_options)

@@ -159,7 +159,7 @@ class Trainer:
         # train_expected_rgbs = self.preprocess_dataset(uv=train_uv_coords, rgb=train_expected_rgbs)
 
         self.train_data = InstantUVDataset(uv=train_uv_coords, rgb=train_expected_rgbs, points_xyz=train_bary_coords,
-                                           angles=train_angles)
+                                           angles=None)
 
         """ DEBUG END """
         # Load val data 
@@ -172,7 +172,7 @@ class Trainer:
 
         val_angles = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "cache_angles.npy"))
         self.val_data = InstantUVDataset(uv=val_uv_coords, rgb=val_expected_rgbs, points_xyz=val_bary_coords,
-                                         angles=val_angles)
+                                         angles=None)
         data_split_path = config.get("data", {}).get("data_split")
         if data_split_path:
             with open(data_split_path, "rb") as f:
@@ -183,12 +183,16 @@ class Trainer:
         # FIXME would it also work if we just used nn.MSELoss? 
         # or does the normalizing improve this significantly?
         self.loss = self.config["model"].get("loss", "L2").lower()
-        assert self.loss in ["l1", "l2"], "Loss must be either L1 or L2"
+        assert self.loss in ["l1", "l2", "c"], "Loss must be either L1 or L2 or c"
         if self.loss == "l2":
             self.loss_fn = lambda pred, target: (
                     (pred - target.to(pred.dtype)) ** 2 / (pred.detach() ** 2 + 0.01)).mean()
         elif self.loss == "l1":
             self.loss_fn = lambda pred, target: torch.abs(pred - target.to(pred.dtype)).mean()
+        elif self.loss == "c":
+            self.gamma = 1  # TODO: ARGS
+            self.loss_fn = lambda pred, target: torch.log(
+                1 + ((pred - target.to(pred.dtype)) / self.gamma) ** 2).mean()
 
         xatlas_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "xatlas.obj")
 
@@ -204,7 +208,8 @@ class Trainer:
         self.image_renderer = ImageRenderer(
             path_to_mesh=path_to_mesh,
             dataset_path=config["data"]["raw_data_path"],
-            uv_path=uv_path
+            uv_path=uv_path,
+            verbose=True,
         )
         self.render_scale = self.config["training"].get("render_scale", 2)
         self.save_validation_images = self.config["training"].get("save_validation_images", False)
@@ -377,7 +382,7 @@ if __name__ == "__main__":
     with open(args.tiny_nn_config) as tiny_nn_config_file:
         tiny_nn_config = json.load(tiny_nn_config_file)
 
-    model = InstantUV_VD1(tiny_nn_config)
+    model = InstantUV(tiny_nn_config)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     trainer = Trainer(model, config, device)
