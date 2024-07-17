@@ -27,7 +27,7 @@ training:
   batch_size: 1000
   render_scale: 1
   save_validation_images: false
-  uv_backend: xatlas # OR BLENDER
+  uv_backend: blender # OR BLENDER
 
   uv_backend_options:  # TODO: Hier oder wo anders
     xatlas: # TODO: Integrate these, for now just draft

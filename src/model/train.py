@@ -146,6 +146,8 @@ class Trainer:
         train_uv_coords = np.load(train_uv_path)
         train_expected_rgbs = np.load(train_rgb_path)
         train_bary_coords = np.load(train_bary_path)
+        vids_of_hit_faces = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "vids_of_hit_faces.npy"))
+
 
         """Angles"""
         train_angles = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "cache_angles.npy"))
@@ -211,6 +213,25 @@ class Trainer:
             uv_path=uv_path,
             verbose=True,
         )
+        # BLENDER ONLY!!!
+        vmapping = np.load(uv_path, allow_pickle=True)
+        d = {}
+        for v in vmapping.values():
+            for k, vv in v.items():
+                arr = d.setdefault(k, [])
+                if list(vv) not in arr:
+                    arr.append(list(vv))
+        vertex_ids_seams = {k: v for k, v in d.items() if len(v) != 1}
+        has_seam_vertices = [any([vertex_ids_seams.get(xx, False) for xx in x]) for x in vids_of_hit_faces]
+        self.loss_pairs = []
+        for l in vertex_ids_seams.values():
+            if len(l) == 2:
+                self.loss_pairs.append(list(l))
+            if len(l) == 3:
+                self.loss_pairs.append(list(l[0:2]))
+                self.loss_pairs.append(list(l[1:3]))
+        self.loss_pairs = torch.from_numpy(np.array(self.loss_pairs))
+
         self.render_scale = self.config["training"].get("render_scale", 2)
         self.save_validation_images = self.config["training"].get("save_validation_images", False)
 
@@ -292,6 +313,13 @@ class Trainer:
         pred_rgb = self.model(uv)
 
         loss = self.loss_fn(pred_rgb, target_rgb)
+
+        seam1 = self.model(torch.from_numpy(np.array(self.loss_pairs))[:,0,:])
+        seam2 = self.model(torch.from_numpy(np.array(self.loss_pairs))[:,1,:])
+        self.seam_factor = 1
+        loss += self.seam_factor * self.loss_fn(seam1, seam2)
+
+
         loss.backward()
         self.optimizer.step()
 

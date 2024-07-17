@@ -293,6 +293,7 @@ class MeshViewPreProcessor:
         self.cache_unit_ray_dirs = []
         self.cache_face_idxs = []
         self.cache_uv_coords = []
+        self.cache_coords3d = []
 
         self.cache_angles = []
         self.cache_angles2 = []
@@ -436,6 +437,7 @@ class MeshViewPreProcessor:
             self.cache_uv_coords.append(uv_coords[idx])
             self.cache_angles.append(angles_normalized_0_1[idx])
             self.cache_angles2.append(torch.from_numpy(np.array([azimuth_n[idx], elevation_n[idx]])))
+            self.cache_coords3d.append(torch.from_numpy(coords_3d[idx]))
 
     def write_to_disk(self):
         print("Starting to write to disk...")
@@ -501,4 +503,11 @@ class MeshViewPreProcessor:
             f"Angles(2): dim={self.cache_angles2.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_angles2)}B, dtype={self.cache_angles2.dtype}")
         np.save(os.path.join(self.out_dir, "cache_angles2.npy"), self.cache_angles2, allow_pickle=False)
         del self.cache_angles2
+        gc.collect()  # Force garbage collection
+
+        self.cache_coords3d = torch.stack(self.cache_coords3d)
+        print(
+            f"Coords3D: dim={self.cache_coords3d.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_coords3d)}B, dtype={self.cache_coords3d.dtype}")
+        np.save(os.path.join(self.out_dir, "coords_3d.npy"), self.cache_coords3d, allow_pickle=False)
+        del self.cache_coords3d
         gc.collect()  # Force garbage collection
