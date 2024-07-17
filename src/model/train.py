@@ -230,7 +230,7 @@ class Trainer:
             if len(l) == 3:
                 self.loss_pairs.append(list(l[0:2]))
                 self.loss_pairs.append(list(l[1:3]))
-        self.loss_pairs = torch.from_numpy(np.array(self.loss_pairs))
+        self.loss_pairs = torch.from_numpy(np.array(self.loss_pairs)).to("cuda")
 
         self.render_scale = self.config["training"].get("render_scale", 2)
         self.save_validation_images = self.config["training"].get("save_validation_images", False)
@@ -314,10 +314,13 @@ class Trainer:
 
         loss = self.loss_fn(pred_rgb, target_rgb)
 
-        seam1 = self.model(torch.from_numpy(np.array(self.loss_pairs))[:,0,:])
-        seam2 = self.model(torch.from_numpy(np.array(self.loss_pairs))[:,1,:])
-        self.seam_factor = 1
-        loss += self.seam_factor * self.loss_fn(seam1, seam2)
+        seam1 = self.model(self.loss_pairs[:,0,:])
+        seam2 = self.model(self.loss_pairs[:,1,:])
+        self.seam_factor = 0.2
+        sl = self.seam_factor * self.loss_fn(seam1, seam2)
+        loss += sl
+
+        # print(f"SL: {sl}")
 
 
         loss.backward()
