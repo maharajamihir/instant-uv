@@ -68,4 +68,4 @@ training:
   epsilon: 1e-08
   weight_decay: 0
 
-  use_wandb: true
+  use_wandb: false

@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 import argparse
 
-from util.enums import CacheFilePaths
 
 # Append src/
 sys.path.append("src/")
@@ -27,7 +26,8 @@ sys.path.append(SCRIPTS_DIR)
 from data.dataset import InstantUVDataset, InstantUVDataLoader
 from util.render import ImageRenderer, downscale_image
 from util.utils import compute_psnr, load_config, export_uv, export_reference_image, load_np
-from model.model import InstantUV, InstantUV_VD1
+from util.enums import CacheFilePaths
+from model.model import InstantUV
 
 
 class Trainer:

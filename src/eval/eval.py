@@ -23,10 +23,11 @@ sys.path.append(SCRIPTS_DIR)
 
 from data.dataset import InstantUVDataset, InstantUVDataLoader
 from util.render import ImageRenderer
-from util.utils import compute_psnr, load_config, export_uv, compute_ssim
+from util.utils import compute_psnr, load_config, export_uv, compute_ssim, time_method
 from model.model import InstantUV
 
-
+DEFAULTS_HUMAN = "config/human/config_human_defaults.yaml"
+DEFAULTS_CAT = "config/cat/config_cat_defaults.yaml"
 
 def evaluate_qualitative(model, config):
     model.eval()
@@ -78,21 +79,24 @@ def evaluate_qualitative(model, config):
     val_lpips = np.mean(val_lpipss)
     return {"psnr": val_psnr, "dssim": val_dssim*100, "lpips": val_lpips*100}
 
-def test_speed():
-    pass
+def test_speed(model, config):
+    dummy_inp = {"points_uv": torch.rand(2**15, 2)}
+    eval_time = time_method(model, dummy_inp)
+    print(eval_time)
+    
 
 
 if __name__ == "__main__":
     weights_path = "model_psnr.pt" # FIXME sorry for hardcoding
-    with open("src/tiny-cuda-nn/data/config_hash.json") as tiny_nn_config_file: # FIXME sorry for hardcoding
-        tiny_nn_config = json.load(tiny_nn_config_file)
 
-    model = InstantUV(tiny_nn_config)
+    config_path = "config/human/config_human_gt.yaml" # FIXME sorry for hardcode
+    config = load_config(config_path, DEFAULTS_HUMAN)
+
+    model = InstantUV(config)
     model.load_state_dict(torch.load(weights_path))
     model.eval()
     print(model)
 
-    config_path = "config/human/config_human.yaml" # FIXME sorry for hardcode
-    config = load_config(config_path)
     stats = evaluate_qualitative(model, config)
     print("\033[1m" + str(stats) + "\033[0m")
+    test_speed(model, config)

@@ -6,6 +6,18 @@ from pathlib import Path
 import torch
 from dotenv import load_dotenv
 
+# Append src/
+sys.path.append("src/")
+sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent))
+
+# Change into instant-uv
+os.chdir(Path(__file__).parent.parent.parent)
+
+# Append scripts DIR
+SCRIPTS_DIR = str(Path(__file__).parent.parent / "tiny-cuda-nn/scripts")
+sys.path.append(SCRIPTS_DIR)
+
 from data.preprocess_dataset import preprocess_dataset
 from model.model import InstantUV
 from model.train import Trainer
