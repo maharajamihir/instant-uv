@@ -1,4 +1,7 @@
+import hashlib
+import json
 import os
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +14,7 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
 from util.mesh import MeshViewPreProcessor
-from util.utils import load_obj_mask, load_cameras, load_config
+from util.utils import load_obj_mask, load_cameras, load_config, load_yaml
 
 os.chdir(Path(__file__).parent.parent.parent)
 
@@ -80,12 +83,56 @@ def preprocess_views(mesh_view_pre_proc, mesh_views_list_train, dataset_path):
         # line_settings={'point_size': 5}
         # )
 
-
-
     mesh_view_pre_proc.write_to_disk()
 
 
-def preprocess_dataset(split, dataset_path, path_to_mesh, out_dir, mesh_views_list_train, check_depth=False, config=None):
+def create_validation_hash_from_params(relevant_params):
+    # Convert the dictionary to a JSON string
+    params_str = json.dumps(relevant_params, sort_keys=True)
+
+    # Create a hash of the JSON string using sha256
+    return hashlib.sha256(params_str.encode()).hexdigest()
+
+
+def check_if_preprocessing_required(config, validation_hash_path, validation_hash):
+    if config["preprocessing"]["force_redo"]:
+        return True
+    else:
+        # Check the hashes to see if we need to redo the preprocessing.
+        if os.path.exists(validation_hash_path):
+            with open(validation_hash_path, 'r') as file:
+                validation_hash_file_content = file.read()
+        else:
+            validation_hash_file_content = None
+
+        if validation_hash_file_content != validation_hash:
+            print(f"Validation hash found in file validation_hash.txt ({validation_hash_file_content}) "
+                  f"does not equal current configuration hash ({validation_hash}).")
+            return True
+        else:
+            print(f"Validation hash found in file validation_hash.txt ({validation_hash_file_content}) "
+                  f"matches current configuration. Skipping the preprocessing.")
+            return False
+
+
+def calculate_validation_hash(config, split, mesh_views_list_train, dataset_path, path_to_mesh):
+    hash_relevant_params = {
+        "mesh_views_list_train": mesh_views_list_train,
+        "path_to_mesh": path_to_mesh,
+        "dataset_path": dataset_path,
+        "split": split,
+        "preprocessing": deepcopy(config["preprocessing"])
+    }
+    if hash_relevant_params["preprocessing"]["uv_backend"].lower() == "blender":
+        hash_relevant_params["preprocessing"]["uv_backend_options"].pop("xatlas", None)
+    if hash_relevant_params["preprocessing"]["uv_backend"].lower() == "xatlas":
+        hash_relevant_params["preprocessing"]["uv_backend_options"].pop("blender", None)
+
+    validation_hash = create_validation_hash_from_params(hash_relevant_params)
+    return validation_hash
+
+
+def preprocess_dataset(split, dataset_path, path_to_mesh, out_dir, mesh_views_list_train, config, check_depth=False):
     """
     Preprocess the entire dataset for a given split.
 
@@ -97,14 +144,30 @@ def preprocess_dataset(split, dataset_path, path_to_mesh, out_dir, mesh_views_li
         mesh_views_list_train (list): List of mesh view file names to process.
     """
     split_out_dir = os.path.join(out_dir, split)
-
-    # if os.path.exists(split_out_dir):
-    # raise RuntimeError(f"Error: You are trying to overwrite the following directory: {split_out_dir}")
     os.makedirs(split_out_dir, exist_ok=True)
 
-    mesh_view_pre_proc = MeshViewPreProcessor(path_to_mesh, split_out_dir, config=config, split=split)
+    # Validation hash calculation
+    validation_hash_path = os.path.join(out_dir, "validation_hash.txt")
+    validation_hash = calculate_validation_hash(
+        config=config,
+        split=split,
+        mesh_views_list_train=mesh_views_list_train,
+        dataset_path=dataset_path,
+        path_to_mesh=path_to_mesh
+    )
 
-    preprocess_views(mesh_view_pre_proc, mesh_views_list_train, dataset_path)
+    # Now check if we need to do the preprocessing
+    do_preprocessing = check_if_preprocessing_required(
+        config=config, validation_hash_path=validation_hash_path, validation_hash=validation_hash
+    )
+
+    if do_preprocessing:
+        mesh_view_pre_proc = MeshViewPreProcessor(path_to_mesh, split_out_dir, config=config, split=split)
+        preprocess_views(mesh_view_pre_proc, mesh_views_list_train, dataset_path)
+        print("Saving validation hash.")
+        with open(validation_hash_path, 'w') as file:
+            file.write(validation_hash)
+        print("Preprocessing finished.")
 
 
 def main():
@@ -113,7 +176,7 @@ def main():
     dataset_path = config["data"]["raw_data_path"]
     out_dir = config["data"]["preproc_data_path"]
     mesh_path = config["data"]["mesh_path"]
-    data_split = load_config(config["data"]["data_split"])
+    data_split = load_yaml(config["data"]["data_split"])
     mesh_views_list_train = data_split[f"mesh_views_list_{args.split}"]
 
     if "all" in mesh_views_list_train:

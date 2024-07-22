@@ -1,0 +1,37 @@
+seed: 0
+method: InstantUV
+experiment:
+  name: Blender Human
+  split: human
+  description: Blender Config for human
+data:
+  raw_data_path: data/raw/human_dataset_v2_tiny/
+  preproc_data_path: data/preprocessed/human_dataset_v2_tiny/blender
+  mesh_path: data/raw/human/RUST_3d_Low1.obj
+  img_height: DEFAULT
+  img_width: DEFAULT
+  data_split: DEFAULT
+  train_render_img_names: DEFAULT
+  render_img_directory: reports/blender
+
+model:
+  loss: DEFAULT
+
+training:
+  epochs: DEFAULT
+  eval_every: DEFAULT
+  checkpoint_every: DEFAULT
+  batch_size: DEFAULT
+  render_scale: DEFAULT  # TODO: Probably deprecated this does not improve anything
+  save_validation_images: DEFAULT
+
+  lr: DEFAULT
+  beta1: DEFAULT
+  beta2: DEFAULT
+  epsilon: DEFAULT
+  weight_decay: DEFAULT
+
+  uv_backend: blender # OR BLENDER
+  uv_backend_options: # TODO: Hier oder wo anders
+    blender:
+      padding: 6

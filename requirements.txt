@@ -25,3 +25,8 @@ pyarrow
 
 xatlas
 commentjson
+
+
+# NEW
+bpy
+python-dotenv

@@ -130,9 +130,35 @@ def batchify_dict_data(data_dict, input_total_size, batch_size):
     return batches
 
 
-def load_config(path):
-    with open(path, "r") as f:
-        config = yaml.safe_load(f)
+def fill_defaults(from_d, to_d, key):
+    # We fill on the following conditions:
+    # 1. Key does not exist
+    if key not in to_d:
+        to_d[key] = from_d[key]
+    # 2. Key value is "DEFAULT"
+    if isinstance(to_d[key], str):
+        if to_d[key].lower() == "default":
+            to_d[key] = from_d[key]
+
+    # Lastly, we recurse if key value is a dict.
+    if isinstance(from_d[key], dict):
+        assert isinstance(to_d[key], dict), "???"
+        for k_key in from_d[key].keys():
+            fill_defaults(from_d[key], to_d[key], k_key)
+
+
+def load_yaml(path):
+    with open(path, "r") as f1:
+        content = yaml.safe_load(f1)
+    return content
+
+
+def load_config(path, defaults):
+    defaults = load_yaml(defaults)
+    config = load_yaml(path)
+
+    for key in defaults.keys():
+        fill_defaults(defaults, config, key)
     return config
 
 
@@ -342,8 +368,7 @@ def get_mapping_blender(mesh, split, config):
     # Replace with the path to your OBJ file
     # obj_file = "/home/morkru/Desktop/Github/instant-uv/data/raw/human/RUST_3d_Low1.obj"
     # obj_file = str(Path(config["data"]["preproc_data_path"]) / split / "xatlas.obj")
-    assert False, "Also nur als info: Hier muss man je aktuell noch je nachdem ob human oder cat dann entweder triangle.obj (human) oder triangle_cat nehmen. Diese wurden aktuell noch manuell aus blender exportiert. Deswegen ist ein teil auch in blender (utils.py) "
-    obj_file = "/home/morkru/Desktop/Github/instant-uv/data/preprocessed/human_dataset_v2_tiny/train/triangle.obj"
+    obj_file = "/data/gts/human/triangle.obj"
     # obj_file = "/home/morkru/Desktop/Github/instant-uv/data/preprocessed/triangle_CAT.obj"
     # new_mesh = load_mesh(obj_file)
 
@@ -376,7 +401,7 @@ def get_mapping_blender(mesh, split, config):
         bpy.ops.mesh.select_all(action='SELECT')
 
         # Unwrap UVs
-        #bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.2)
+        # bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.2)
         # Lets try transform to triangles
         # bpy.ops.mesh.quads_convert_to_tris(quad_method='BEAUTY', ngon_method='BEAUTY')
 
@@ -620,3 +645,12 @@ class LRUCache:
 def normalize_values(values, min_val, max_val):
     """ Normalize values to the range [0, 1] """
     return (values - min_val) / (max_val - min_val)
+
+
+def load_np(path, allow_not_exists):
+    try:
+        return np.load(path)
+    except FileNotFoundError as e:
+        if allow_not_exists:
+            return None
+        raise e

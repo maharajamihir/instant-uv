@@ -52,7 +52,9 @@ python src/model/train.py --config_path config/human/config_human.yaml
 For now during training, for every eval step, all the views in the val data-split will be rendered into the render/ directory :)
 
 ## Run experiments
-TODO
+### Note for using wandb:
+
+If `training>use_wandb` is set in (config.yaml) an .env file must be created in `src/.env` with WANDB_API_KEY=<<your-key>>
 
 # Notes
 ## Pipeline 

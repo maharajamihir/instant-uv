@@ -1,10 +1,10 @@
-data/*
 __pycache__/
 */__pycache__/
 
 data/raw
 data/preprocessed
 src/.idea/
+src/.env
 .idea
 /.ipynb_checkpoints/test-checkpoint.ipynb
 

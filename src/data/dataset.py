@@ -12,12 +12,14 @@ class InstantUVDataset(Dataset):
         points_xyz (tensor, optional): Tensor containing 3D point coordinates. Default is None.
     """
 
-    def __init__(self, uv, rgb, points_xyz=None, angles=None):
+    def __init__(self, uv, rgb, points_xyz=None, angles=None, angles2=None, coords3d=None):
         # points_xyz are optional because we don't really need them for training.
         self.uv = torch.from_numpy(uv)
         self.rgb = torch.from_numpy(rgb)
         self.points_xyz = torch.from_numpy(points_xyz) if points_xyz is not None else None
         self.angles = torch.from_numpy(angles) if angles is not None else None
+        self.angles2 = torch.from_numpy(angles2) if angles2 is not None else None
+        self.coords3d = torch.from_numpy(coords3d) if coords3d is not None else None
 
     def __len__(self):
         """
@@ -47,6 +49,10 @@ class InstantUVDataset(Dataset):
             sample['xyz'] = self.points_xyz[idx]
         if self.angles is not None:
             sample['angles'] = self.angles[idx]
+        if self.angles2 is not None:
+            sample['angles2'] = self.angles2[idx]
+        if self.coords3d is not None:
+            sample['coords3d'] = self.coords3d[idx]
         return sample
 
 

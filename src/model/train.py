@@ -1,12 +1,16 @@
 import torch
 import numpy as np
 
+import wandb
+
 import os
 import json
 import yaml
 import sys
 from pathlib import Path
 import argparse
+
+from util.enums import CacheFilePaths
 
 # Append src/
 sys.path.append("src/")
@@ -22,8 +26,8 @@ sys.path.append(SCRIPTS_DIR)
 
 from data.dataset import InstantUVDataset, InstantUVDataLoader
 from util.render import ImageRenderer, downscale_image
-from util.utils import compute_psnr, load_config, export_uv, export_reference_image
-from model import InstantUV, InstantUV_VD1
+from util.utils import compute_psnr, load_config, export_uv, export_reference_image, load_np
+from model.model import InstantUV, InstantUV_VD1
 
 
 class Trainer:
@@ -119,12 +123,60 @@ class Trainer:
             f"#changed_rgbs: {changed_rgbs} of total {len(rgb)} ({changed_rgbs / len(rgb) * 100:.2f}%) with avg_color_change: {avg_color_change}")
         return after_querying_the_averaged_img.numpy()
 
-        # vertices_of_hit_faces_old = np.array(mesh_view_pre_proc.mesh.vertices[np.stack(mesh_view_pre_proc.cache_vertex_idxs_of_hit_faces)])
-        # coords_3d_old = np.sum(np.stack(mesh_view_pre_proc.cache_barycentric_coords)[:, :, np.newaxis] * vertices_of_hit_faces_old, axis=1)
-        # import trimesh
-        # trimesh.PointCloud(vertices=coords_3d_old, colors=np.stack(mesh_view_pre_proc.cache_expected_rgbs) * 255).show(
-        #     line_settings={'point_size': 5}
-        # )
+    def assert_wandb(self):
+        assert os.environ.get("WANDB_API_KEY") is not None, ("You trying to use wandb. Thus "
+                                                             "WANDB_API_KEY environment variable must be set."
+                                                             "See README.md")
+
+    def init_wandb(self):
+        try:
+            wandb.init(
+                project="instant-uv",
+                # track hyperparameters and run metadata
+                config=self.config
+            )
+        except wandb.errors.UsageError as e:
+            print("WANDB_API_KEY environment variable is not configured correctly. See README.md")
+            raise e
+
+    def load_data(self, split):  # TODO: Perhaps different file
+        base_dir = str(Path(self.config["data"]["preproc_data_path"]) / split)
+        uv = load_np(f"{base_dir}/{CacheFilePaths.UV_COORDS.value}", allow_not_exists=False)
+        rgb = load_np(f"{base_dir}/{CacheFilePaths.EXPECTED_RGBS.value}", allow_not_exists=False)
+        bary = load_np(f"{base_dir}/{CacheFilePaths.BARYCENTRIC_COORDS.value}", allow_not_exists=False)
+        vids = load_np(f"{base_dir}/{CacheFilePaths.VIDS_OF_HIT_FACES.value}", allow_not_exists=False)
+
+        should_exist_angles = self.config["preprocessing"]["export_angles"]
+        angles = load_np(f"{base_dir}/{CacheFilePaths.ANGLES.value}", allow_not_exists=should_exist_angles) \
+            if should_exist_angles else None
+        angles2 = load_np(f"{base_dir}/{CacheFilePaths.ANGLES2.value}", allow_not_exists=should_exist_angles) \
+            if should_exist_angles else None
+
+        should_exist_c3d = self.config["preprocessing"]["export_coords3d"]
+        c3d = load_np(f"{base_dir}/{CacheFilePaths.COORDS3D.value}", allow_not_exists=should_exist_c3d) \
+            if should_exist_c3d else None
+
+        return uv, rgb, bary, vids, angles, angles2, c3d
+
+    def experimental_seam_loss_init(self, uv_path, vids_of_hit_faces):
+        # BLENDER ONLY!!!
+        vmapping = np.load(uv_path, allow_pickle=True)
+        d = {}
+        for v in vmapping.values():
+            for k, vv in v.items():
+                arr = d.setdefault(k, [])
+                if list(vv) not in arr:
+                    arr.append(list(vv))
+        vertex_ids_seams = {k: v for k, v in d.items() if len(v) != 1}
+        has_seam_vertices = [any([vertex_ids_seams.get(xx, False) for xx in x]) for x in vids_of_hit_faces]
+        self.loss_pairs = []
+        for l in vertex_ids_seams.values():
+            if len(l) == 2:
+                self.loss_pairs.append(list(l))
+            if len(l) == 3:
+                self.loss_pairs.append(list(l[0:2]))
+                self.loss_pairs.append(list(l[1:3]))
+        self.loss_pairs = torch.from_numpy(np.array(self.loss_pairs)).to("cuda")
 
     def __init__(self, model, config, device):
         """
@@ -138,20 +190,21 @@ class Trainer:
         self.device = device
         self.model = model.to(self.device)
         self.config = config
+        self.use_wandb = self.config["training"]["use_wandb"]
+        self.seam_factor = self.config["model"]["seam_loss"]  # TODO: Determine if this is good or not
+
+        if self.use_wandb:
+            self.assert_wandb()
 
         # Load train data
-        train_uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv_coords.npy")
-        train_rgb_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "expected_rgbs.npy")
-        train_bary_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "barycentric_coords.npy")
-        train_uv_coords = np.load(train_uv_path)
-        train_expected_rgbs = np.load(train_rgb_path)
-        train_bary_coords = np.load(train_bary_path)
-        vids_of_hit_faces = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "vids_of_hit_faces.npy"))
-
-
-        """Angles"""
-        train_angles = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "cache_angles.npy"))
-        train_angles2 = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "cache_angles2.npy"))
+        (train_uv_coords,
+         train_expected_rgbs,
+         train_bary_coords,
+         vids_of_hit_faces,
+         train_angles,
+         train_angles2,
+         coords3d
+         ) = self.load_data("train")
 
         self.uv_resolution = (1024 * 2, 1024 * 2)  # TODO: Make this config arg
         self.uv_preprocess_resolution = (1024 * 2, 1024 * 2)  # (1536, 1536)
@@ -163,26 +216,33 @@ class Trainer:
         self.train_data = InstantUVDataset(uv=train_uv_coords, rgb=train_expected_rgbs, points_xyz=train_bary_coords,
                                            angles=None)
 
-        """ DEBUG END """
-        # Load val data 
-        val_uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv_coords.npy")
-        val_rgb_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "expected_rgbs.npy")
-        val_bary_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "barycentric_coords.npy")
-        val_uv_coords = np.load(val_uv_path)
-        val_expected_rgbs = np.load(val_rgb_path)
-        val_bary_coords = np.load(val_bary_path)
+        # Load val data
+        (val_uv_coords,
+         val_expected_rgbs,
+         val_bary_coords,
+         val_vids,
+         val_angles,
+         val_angles2,
+         val_c3d) = self.load_data("train")  # FIXME: THIS LOOKS WRONG!! -> SHOULD BE VAL NO??
 
-        val_angles = np.load(str(Path(config["data"]["preproc_data_path"]) / "train" / "cache_angles.npy"))
-        self.val_data = InstantUVDataset(uv=val_uv_coords, rgb=val_expected_rgbs, points_xyz=val_bary_coords,
-                                         angles=None)
+        self.val_data = InstantUVDataset(
+            uv=val_uv_coords, rgb=val_expected_rgbs, points_xyz=val_bary_coords, angles=val_angles, coords3d=coords3d
+        )
         data_split_path = config.get("data", {}).get("data_split")
         if data_split_path:
             with open(data_split_path, "rb") as f:
                 self.data_split = yaml.safe_load(f)
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)  # FIXME get this from config
+        self.optimizer = torch.optim.Adam(self.model.parameters(),
+                                          lr=float(self.config["training"]["lr"]),
+                                          betas=(float(self.config["training"]["beta1"]),
+                                                 float(self.config["training"]["beta2"])),
+                                          eps=float(self.config["training"]["epsilon"]),
+                                          weight_decay=float(self.config["training"]["weight_decay"])
 
-        # FIXME would it also work if we just used nn.MSELoss? 
+                                          )  # FIXME get this from config
+
+        # FIXME would it also work if we just used nn.MSELoss?
         # or does the normalizing improve this significantly?
         self.loss = self.config["model"].get("loss", "L2").lower()
         assert self.loss in ["l1", "l2", "c"], "Loss must be either L1 or L2 or c"
@@ -207,30 +267,15 @@ class Trainer:
             uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv.pkl")
             path_to_mesh = xatlas_path
 
+        if self.seam_factor > 0:
+            self.experimental_seam_loss_init(uv_path, vids_of_hit_faces)
+
         self.image_renderer = ImageRenderer(
             path_to_mesh=path_to_mesh,
             dataset_path=config["data"]["raw_data_path"],
             uv_path=uv_path,
             verbose=True,
         )
-        # BLENDER ONLY!!!
-        vmapping = np.load(uv_path, allow_pickle=True)
-        d = {}
-        for v in vmapping.values():
-            for k, vv in v.items():
-                arr = d.setdefault(k, [])
-                if list(vv) not in arr:
-                    arr.append(list(vv))
-        vertex_ids_seams = {k: v for k, v in d.items() if len(v) != 1}
-        has_seam_vertices = [any([vertex_ids_seams.get(xx, False) for xx in x]) for x in vids_of_hit_faces]
-        self.loss_pairs = []
-        for l in vertex_ids_seams.values():
-            if len(l) == 2:
-                self.loss_pairs.append(list(l))
-            if len(l) == 3:
-                self.loss_pairs.append(list(l[0:2]))
-                self.loss_pairs.append(list(l[1:3]))
-        self.loss_pairs = torch.from_numpy(np.array(self.loss_pairs)).to("cuda")
 
         self.render_scale = self.config["training"].get("render_scale", 2)
         self.save_validation_images = self.config["training"].get("save_validation_images", False)
@@ -239,9 +284,12 @@ class Trainer:
         """
         Train the model for a specified number of epochs.
 
-        This function iterates over the number of epochs defined in the configuration, 
+        This function iterates over the number of epochs defined in the configuration,
         performing training and validation steps.
         """
+        if self.use_wandb:
+            self.init_wandb()  # TODO: DECLARE IN CONFIG IF WE USE WANDB OR NOT /// OR CALL IN __INIT__
+
         best_val = 10000.
         best_val_psnr = 0.
         self.train_loader = InstantUVDataLoader(
@@ -261,11 +309,15 @@ class Trainer:
             # Train for one epoch
             train_loss = self._train_epoch()
             print(f"Epoch [{epoch + 1}/{num_epochs}], Training Loss: {train_loss}")
+            if self.use_wandb:
+                wandb.log({"epoch": epoch, "train_loss": train_loss})
 
             # Validation
             if epoch % self.config["training"].get("eval_every", 1000) == 0:
                 val_loss, val_psnr = self._validate_epoch()
                 print("Validation Loss:", val_loss, "Validation PSNR:", val_psnr)
+                if self.use_wandb:
+                    wandb.log({"epoch": epoch, "val_loss": val_loss, "val_psnr": val_psnr})
                 if val_loss < best_val:
                     best_val = val_loss
                     print("Saving model best (val_error)...")
@@ -295,6 +347,19 @@ class Trainer:
 
         return running_loss / len(self.train_loader)
 
+    def _calcualte_seam_loss(self):
+        if self.seam_factor > 0:
+            loss_tensor = torch.tensor(0.0, requires_grad=True)
+            seam1 = self.model(self.loss_pairs[:, 0, :])
+            seam2 = self.model(self.loss_pairs[:, 1, :])
+
+            # Use L1 Loss
+            loss_tensor += (
+                    self.seam_factor *
+                    (lambda pred, target: torch.abs(pred - target.to(pred.dtype)).mean())(seam1, seam2)
+            )
+        return 0.0
+
     def _train_step(self, batch):
         """
         Perform a single training step with the given batch of data.
@@ -314,14 +379,9 @@ class Trainer:
 
         loss = self.loss_fn(pred_rgb, target_rgb)
 
-        seam1 = self.model(self.loss_pairs[:,0,:])
-        seam2 = self.model(self.loss_pairs[:,1,:])
-        self.seam_factor = 0.2
-        sl = self.seam_factor * self.loss_fn(seam1, seam2)
-        loss += sl
-
-        # print(f"SL: {sl}")
-
+        # Experimental, can be removed if required
+        seam_loss = self._calcualte_seam_loss()
+        loss += seam_loss
 
         loss.backward()
         self.optimizer.step()
@@ -332,7 +392,7 @@ class Trainer:
         """
         Perform one epoch of validation.
 
-        This function iterates over the validation data loader, performing validation steps. 
+        This function iterates over the validation data loader, performing validation steps.
         It also renders the val images and saves them in the `reports` directory
 
         Returns:
@@ -359,10 +419,10 @@ class Trainer:
             images_np = [downscale_image(i, h, kernel_size=self.render_scale) for (i, h) in zip(images_np, hit_counts)]
         val_psnrs = np.zeros(len(images_np), dtype=np.float32)
 
-        # FIXME this loop is super slow!!! fix this / Note from moritz: its not slow lol
         for i, (image_pred, image_gt, mask) in enumerate(list(zip(images_np, gts, masks))):
             val_psnrs[i] = compute_psnr(
-                image_gt[mask].astype("int16") / 255.0,  # FIXME: utype8 would mess up the calculation (CHECK)
+                image_gt[mask].astype("int16") / 255.0,
+                # FIXME: utype8 would mess up the calculation (CHECK) / Note from Mihir: yes it messes it up, need int16
                 image_pred[mask].astype("int16") / 255.0
             )
 
@@ -396,10 +456,8 @@ class Trainer:
 def get_args():
     parser = argparse.ArgumentParser(description="Image benchmark using PyTorch bindings.")
 
-    parser.add_argument("config_path", nargs="?", default="config/human/config_human.yaml",
+    parser.add_argument("config_path", nargs="?", default="config/human/config_human_gt.yaml",
                         help="YAML config for our training stuff")
-    parser.add_argument("tiny_nn_config", nargs="?", default="src/tiny-cuda-nn/data/config_hash.json",
-                        help="JSON config for tiny-cuda-nn")
     parser.add_argument("n_steps", nargs="?", type=int, default=1000000, help="Number of training steps")
 
     args = parser.parse_args()
@@ -408,13 +466,14 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    config = load_config(args.config_path)
+    DEFAULTS_HUMAN = "config/human/config_human_defaults.yaml"
+    cfg = load_config(args.config_path, DEFAULTS_HUMAN)
 
-    with open(args.tiny_nn_config) as tiny_nn_config_file:
-        tiny_nn_config = json.load(tiny_nn_config_file)
+    mdl = InstantUV(cfg)
 
-    model = InstantUV(tiny_nn_config)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    trainer = Trainer(model, config, device)
+    if cfg["training"]["device"].lower() == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = cfg["training"]["device"]
+    trainer = Trainer(mdl, cfg, device)
     trainer.train()

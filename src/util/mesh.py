@@ -6,10 +6,13 @@ import numpy as np
 import torch
 import igl
 import trimesh
+from trimesh import triangles
 import os
 import gc
 import scipy as sp
 import warnings
+
+from util.enums import CacheFilePaths
 
 warnings.filterwarnings('ignore')
 
@@ -85,8 +88,8 @@ def ray_mesh_intersect(ray_mesh_intersector, mesh, ray_origins, ray_directions, 
 
     vertex_idxs_of_hit_faces = vertex_idxs_of_hit_faces.reshape(-1, 3)  # M x 3
 
-    barycentric_coords = trimesh.triangles.points_to_barycentric(hit_triangles, intersect_locs,
-                                                                 method='cramer')  # M x 3
+    barycentric_coords = triangles.points_to_barycentric(hit_triangles, intersect_locs,
+                                                         method='cramer')  # M x 3
 
     if return_depth:
         assert camCv2world is not None
@@ -142,8 +145,7 @@ def ray_mesh_intersect_np(ray_mesh_intersector, mesh, ray_origins, ray_direction
 
     vertex_idxs_of_hit_faces = vertex_idxs_of_hit_faces.reshape(-1, 3)  # M x 3
 
-    barycentric_coords = trimesh.triangles.points_to_barycentric(hit_triangles, intersect_locs,
-                                                                 method='cramer')  # M x 3
+    barycentric_coords = triangles.points_to_barycentric(hit_triangles, intersect_locs, method='cramer')  # M x 3
 
     if return_depth:
         assert camCv2world is not None
@@ -280,12 +282,13 @@ def ray_tracing_xyz(ray_mesh_intersector,
 
 
 class MeshViewPreProcessor:
-    def __init__(self, path_to_mesh, out_directory, config=None, split=None):
+    def __init__(self, path_to_mesh, out_directory, config, split):
         self.out_dir = out_directory
         self.mesh = load_mesh(path_to_mesh)
         self.ray_mesh_intersector = get_ray_mesh_intersector(self.mesh)
         self.config = config
         self.split = split
+        self.pp_config = self.config["preprocessing"]
 
         self.cache_vertex_idxs_of_hit_faces = []
         self.cache_barycentric_coords = []
@@ -294,7 +297,6 @@ class MeshViewPreProcessor:
         self.cache_face_idxs = []
         self.cache_uv_coords = []
         self.cache_coords3d = []
-
         self.cache_angles = []
         self.cache_angles2 = []
 
@@ -308,74 +310,7 @@ class MeshViewPreProcessor:
                                   return_depth=return_depth,
                                   camCv2world=camCv2world)
 
-    def cache_single_view(self, camCv2world, K, mask, img, distortion_coeffs=None, distortion_type=None):
-        H, W = mask.shape
-
-        mask = mask.reshape(-1)  # H*W
-        img = img.reshape(H * W, -1)  # H*W x 3
-
-        # Let L be the number of pixels where the object is seen in the view
-
-        # Get the expected RGB value of the intersection points with the mesh
-        expected_rgbs = img[mask]  # L x 3
-
-        # Get the ray origins and unit directions
-        ray_origins, unit_ray_dirs = create_ray_origins_and_directions(camCv2world,
-                                                                       K,
-                                                                       mask,
-                                                                       H=H,
-                                                                       W=W,
-                                                                       distortion_coeffs=distortion_coeffs,
-                                                                       distortion_type=distortion_type)
-
-        # Then, we can compute the ray-mesh-intersections
-        vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs = self._ray_mesh_intersect(ray_origins,
-                                                                                                         unit_ray_dirs)
-
-        # Sanity assertion
-        # TODO: Note we dont care about this error in preprocessing lol
-        # assert len(vertex_idxs_of_hit_faces) == len(ray_origins), \
-        #    f"SHOULD MATCH {len(vertex_idxs_of_hit_faces)} != {len(ray_origins)}"
-
-        """
-        TODO use the retrieved values from ray mesh intersection to obtain our preferred dataset format
-
-        We have:
-            - Face IDs for each hit face
-            - Barycentric coordinates for each hitpoint
-            - Vertex IDs of each vertex of each hit face
-            - RGB values for each point
-        We want:
-            - 3D coodinates 
-            - 2D coordinates (which can be bijectively mapped to the 3D coordinates)
-            - [DONE] RGB values for each point 
-
-        The idea here is to 
-            - Use the ray_tracing_xyz function to retrieve 3D coordinates
-            - Use the map_to_UV function from `utils/utils.py` to obtain a 2D points
-
-        """
-
-        # TODO: HERE WE GET A NEW VARIABLE
-        uv_backend = self.config["training"].get("uv_backend", "blender").lower()
-
-        if uv_backend == "blender":
-            # get uv coordinates
-            mapping = get_mapping_blender(self.mesh, self.split, self.config)
-            uv_coords = map_to_UV_blender(barycentric_coords, face_idxs, vertex_idxs_of_hit_faces, mapping)
-
-        elif uv_backend == "xatlas":
-            # get uv coordinates
-            mapping = get_mapping(self.mesh, self.split, self.config)
-
-            # FIXME: mapping, we must get the right object directly form get_mapping
-            uv_coords = map_to_UV(barycentric_coords, face_idxs, mapping)
-
-        # Choose the correct GTs and viewing directions for the hits.
-        num_hits = hit_ray_idxs.size()[0]
-        expected_rgbs = expected_rgbs[hit_ray_idxs]
-        unit_ray_dirs = unit_ray_dirs[hit_ray_idxs]
-
+    def calculate_angles(self, barycentric_coords, vertex_idxs_of_hit_faces, face_idxs, ray_origins):
         """ NORMALS """
         vertices_of_hit_faces = np.array(self.mesh.vertices[vertex_idxs_of_hit_faces])
         coords_3d = np.sum(barycentric_coords.numpy()[:, :, np.newaxis] * vertices_of_hit_faces, axis=1)
@@ -402,9 +337,123 @@ class MeshViewPreProcessor:
         dot_product_xy = np.einsum('ij,ij->i', u_xy, v_xy)  # Dot product of projections
         cross_product_xy = np.cross(u_xy, v_xy)
         azimuth = np.arctan2(np.linalg.norm(cross_product_xy, axis=1), dot_product_xy)
-        elevation = np.arcsin(np.einsum('ij,j->i', np.cross(normals, intersect_to_cam), np.array([0, 0, 1])))
+        elevation = np.arcsin(
+            np.einsum('ij,j->i', np.cross(normals, intersect_to_cam), np.array([0, 0, 1]))
+        )
         azimuth_n = normalize_values(azimuth, -np.pi, np.pi)
         elevation_n = normalize_values(elevation, -np.pi / 2, np.pi / 2)
+
+        return angles_degrees, angles_normalized_0_1, azimuth_n, elevation_n
+
+    def calculate_coords3d(self, barycentric_coords, vertex_idxs_of_hit_faces):
+        vertices_of_hit_faces = np.array(self.mesh.vertices[vertex_idxs_of_hit_faces])
+        return np.sum(barycentric_coords.numpy()[:, :, np.newaxis] * vertices_of_hit_faces, axis=1)
+
+    def perform_ray_mesh_intersection(self, camCv2world, K, mask, distortion_coeffs, distortion_type):
+        H, W = mask.shape
+        mask = mask.reshape(-1)  # H*W
+
+        # Get the ray origins and unit directions
+        ray_origins, unit_ray_dirs = create_ray_origins_and_directions(camCv2world,
+                                                                       K,
+                                                                       mask,
+                                                                       H=H,
+                                                                       W=W,
+                                                                       distortion_coeffs=distortion_coeffs,
+                                                                       distortion_type=distortion_type)
+
+        # Then, we can compute the ray-mesh-intersections
+        vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs = (
+            self._ray_mesh_intersect(ray_origins, unit_ray_dirs)
+        )
+        return vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, unit_ray_dirs, ray_origins
+
+    def get_uv_coords(self, barycentric_coords, face_idxs, vertex_idxs_of_hit_faces):
+        uv_backend = self.pp_config["uv_backend"].lower()
+
+        if uv_backend == "blender":
+            # get uv coordinates
+            mapping = get_mapping_blender(self.mesh, self.split, self.config)
+            uv_coords = map_to_UV_blender(barycentric_coords, face_idxs, vertex_idxs_of_hit_faces, mapping)
+
+        elif uv_backend == "xatlas":
+            # get uv coordinates
+            mapping = get_mapping(self.mesh, self.split, self.config)
+
+            # FIXME: mapping, we must get the right object directly form get_mapping
+            uv_coords = map_to_UV(barycentric_coords, face_idxs, mapping)
+
+        else:
+            raise Exception("Unsupported uv_backend: {}".format(uv_backend))
+        return uv_coords
+
+    def cache_single_view(self, camCv2world, K, mask, img, distortion_coeffs=None, distortion_type=None):
+        # Perform ray mesh intersection
+        vertex_idxs_of_hit_faces, barycentric_coords, hit_ray_idxs, face_idxs, unit_ray_dirs, ray_origins = (
+            self.perform_ray_mesh_intersection(
+                camCv2world=camCv2world,
+                K=K,
+                mask=mask,
+                distortion_coeffs=distortion_coeffs,
+                distortion_type=distortion_type
+            )
+        )
+
+        H, W = mask.shape
+        mask = mask.reshape(-1)  # H*W
+        img = img.reshape(H * W, -1)  # H*W x 3
+        expected_rgbs = img[mask]  # L x 3
+        """
+        TODO use the retrieved values from ray mesh intersection to obtain our preferred dataset format
+
+        We have:
+            - Face IDs for each hit face
+            - Barycentric coordinates for each hitpoint
+            - Vertex IDs of each vertex of each hit face
+            - RGB values for each point
+        We want:
+            - 3D coodinates 
+            - 2D coordinates (which can be bijectively mapped to the 3D coordinates)
+            - [DONE] RGB values for each point 
+
+        The idea here is to 
+            - Use the ray_tracing_xyz function to retrieve 3D coordinates
+            - Use the map_to_UV function from `utils/utils.py` to obtain a 2D points
+
+        """
+
+        uv_coords = self.get_uv_coords(
+            barycentric_coords=barycentric_coords,
+            face_idxs=face_idxs,
+            vertex_idxs_of_hit_faces=vertex_idxs_of_hit_faces
+        )
+
+        # Choose the correct GTs and viewing directions for the hits.
+        num_hits = hit_ray_idxs.size()[0]
+        expected_rgbs = expected_rgbs[hit_ray_idxs]
+        unit_ray_dirs = unit_ray_dirs[hit_ray_idxs]
+
+        if self.pp_config["export_angles"]:
+            angles_degrees, angles_normalized_0_1, azimuth_n, elevation_n = self.calculate_angles(
+                barycentric_coords=barycentric_coords,
+                vertex_idxs_of_hit_faces=vertex_idxs_of_hit_faces,
+                face_idxs=face_idxs,
+                ray_origins=ray_origins
+            )
+            angles_normalized_0_1 = torch.from_numpy(angles_normalized_0_1).to(torch.float32)
+            azimuth_n = torch.from_numpy(azimuth_n).to(torch.float32)
+            elevation_n = torch.from_numpy(elevation_n).to(torch.float32)
+            for idx in range(num_hits):
+                self.cache_angles.append(angles_normalized_0_1[idx])
+                self.cache_angles2.append(torch.from_numpy(np.array([azimuth_n[idx], elevation_n[idx]])))
+
+        if self.pp_config["export_coords3d"]:
+            coords_3d = self.calculate_coords3d(
+                barycentric_coords=barycentric_coords,
+                vertex_idxs_of_hit_faces=vertex_idxs_of_hit_faces
+            )
+            for idx in range(num_hits):
+                self.cache_coords3d.append(torch.from_numpy(coords_3d[idx]))
 
         # Some clean up to free memory
         del ray_origins, hit_ray_idxs, mask, img
@@ -420,12 +469,7 @@ class MeshViewPreProcessor:
         barycentric_coords = barycentric_coords.to(torch.float32)
         expected_rgbs = expected_rgbs.to(torch.float32)
         unit_ray_dirs = unit_ray_dirs.to(torch.float32)
-        uv_coords = uv_coords.to(torch.float32)  # FIXME check if this works
-
-        """ Angles """
-        angles_normalized_0_1 = torch.from_numpy(angles_normalized_0_1).to(torch.float32)
-        azimuth_n = torch.from_numpy(azimuth_n).to(torch.float32)
-        elevation_n = torch.from_numpy(elevation_n).to(torch.float32)
+        uv_coords = uv_coords.to(torch.float32)
 
         # And finally, we store the results in the cache
         for idx in range(num_hits):
@@ -435,9 +479,17 @@ class MeshViewPreProcessor:
             self.cache_expected_rgbs.append(expected_rgbs[idx])
             self.cache_unit_ray_dirs.append(unit_ray_dirs[idx])
             self.cache_uv_coords.append(uv_coords[idx])
-            self.cache_angles.append(angles_normalized_0_1[idx])
-            self.cache_angles2.append(torch.from_numpy(np.array([azimuth_n[idx], elevation_n[idx]])))
-            self.cache_coords3d.append(torch.from_numpy(coords_3d[idx]))
+
+    def _stack_and_write_to_disk(self, array, filename: str):
+        stacked = torch.stack(array)
+        name = filename.split(".")[0]
+        print(f"{name}: dim={stacked.size()}, "
+              f"mem_size={tensor_mem_size_in_bytes(stacked)}B,"
+              f"dtype={stacked.dtype}")
+        np.save(os.path.join(self.out_dir, filename), stacked, allow_pickle=False)
+        del array
+        del stacked
+        gc.collect()  # Force garbage collection
 
     def write_to_disk(self):
         print("Starting to write to disk...")
@@ -445,69 +497,17 @@ class MeshViewPreProcessor:
         # Write the cached eigenfuncs and cached expected RGBs to disk
         os.makedirs(self.out_dir, exist_ok=True)
 
-        # Stack the results, write to disk, and then free up memory
+        # write to disk and free memory
+        self._stack_and_write_to_disk(self.cache_face_idxs, CacheFilePaths.FACE_IDXS.value)
+        self._stack_and_write_to_disk(self.cache_vertex_idxs_of_hit_faces, CacheFilePaths.VIDS_OF_HIT_FACES.value)
+        self._stack_and_write_to_disk(self.cache_barycentric_coords, CacheFilePaths.BARYCENTRIC_COORDS.value)
+        self._stack_and_write_to_disk(self.cache_uv_coords, CacheFilePaths.UV_COORDS.value)
+        self._stack_and_write_to_disk(self.cache_expected_rgbs, CacheFilePaths.EXPECTED_RGBS.value)
+        self._stack_and_write_to_disk(self.cache_unit_ray_dirs, CacheFilePaths.UNIT_RAY_DIRS.value)
 
-        self.cache_face_idxs = torch.stack(self.cache_face_idxs)
-        print(
-            f"Face Idxs: dim={self.cache_face_idxs.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_face_idxs)}B, dtype={self.cache_face_idxs.dtype}")
-        np.save(os.path.join(self.out_dir, "face_idxs.npy"), self.cache_face_idxs, allow_pickle=False)
-        del self.cache_face_idxs
-        gc.collect()  # Force garbage collection
+        if self.pp_config["export_angles"]:
+            self._stack_and_write_to_disk(self.cache_angles, CacheFilePaths.ANGLES.value)
+            self._stack_and_write_to_disk(self.cache_angles2, CacheFilePaths.ANGLES2.value)
 
-        self.cache_vertex_idxs_of_hit_faces = torch.stack(self.cache_vertex_idxs_of_hit_faces)
-        print(
-            f"Vertex Idxs of Hit Faces: dim={self.cache_vertex_idxs_of_hit_faces.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_vertex_idxs_of_hit_faces)}B, dtype={self.cache_vertex_idxs_of_hit_faces.dtype}")
-        np.save(os.path.join(self.out_dir, "vids_of_hit_faces.npy"), self.cache_vertex_idxs_of_hit_faces,
-                allow_pickle=False)
-        del self.cache_vertex_idxs_of_hit_faces
-        gc.collect()  # Force garbage collection
-
-        self.cache_barycentric_coords = torch.stack(self.cache_barycentric_coords)
-        print(
-            f"Barycentric Coords: dim={self.cache_barycentric_coords.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_barycentric_coords)}B, dtype={self.cache_barycentric_coords.dtype}")
-        np.save(os.path.join(self.out_dir, "barycentric_coords.npy"), self.cache_barycentric_coords, allow_pickle=False)
-        del self.cache_barycentric_coords
-        gc.collect()  # Force garbage collection
-
-        self.cache_uv_coords = torch.stack(self.cache_uv_coords)
-        print(
-            f"UV Coords: dim={self.cache_uv_coords.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_uv_coords)}B, dtype={self.cache_uv_coords.dtype}")
-        np.save(os.path.join(self.out_dir, "uv_coords.npy"), self.cache_uv_coords, allow_pickle=False)
-        del self.cache_uv_coords
-        gc.collect()  # Force garbage collection
-
-        self.cache_expected_rgbs = torch.stack(self.cache_expected_rgbs)
-        print(
-            f"Expected RGBs: dim={self.cache_expected_rgbs.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_expected_rgbs)}B, dtype={self.cache_expected_rgbs.dtype}")
-        np.save(os.path.join(self.out_dir, "expected_rgbs.npy"), self.cache_expected_rgbs, allow_pickle=False)
-        del self.cache_expected_rgbs
-        gc.collect()  # Force garbage collection
-
-        self.cache_unit_ray_dirs = torch.stack(self.cache_unit_ray_dirs)
-        print(
-            f"Unit Ray Dirs: dim={self.cache_unit_ray_dirs.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_unit_ray_dirs)}B, dtype={self.cache_unit_ray_dirs.dtype}")
-        np.save(os.path.join(self.out_dir, "unit_ray_dirs.npy"), self.cache_unit_ray_dirs, allow_pickle=False)
-        del self.cache_unit_ray_dirs
-        gc.collect()  # Force garbage collection
-
-        """Angles"""
-        self.cache_angles = torch.stack(self.cache_angles)
-        print(
-            f"Angles: dim={self.cache_angles.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_angles)}B, dtype={self.cache_angles.dtype}")
-        np.save(os.path.join(self.out_dir, "cache_angles.npy"), self.cache_angles, allow_pickle=False)
-        del self.cache_angles
-        gc.collect()  # Force garbage collection
-
-        self.cache_angles2 = torch.stack(self.cache_angles2)
-        print(
-            f"Angles(2): dim={self.cache_angles2.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_angles2)}B, dtype={self.cache_angles2.dtype}")
-        np.save(os.path.join(self.out_dir, "cache_angles2.npy"), self.cache_angles2, allow_pickle=False)
-        del self.cache_angles2
-        gc.collect()  # Force garbage collection
-
-        self.cache_coords3d = torch.stack(self.cache_coords3d)
-        print(
-            f"Coords3D: dim={self.cache_coords3d.size()}, mem_size={tensor_mem_size_in_bytes(self.cache_coords3d)}B, dtype={self.cache_coords3d.dtype}")
-        np.save(os.path.join(self.out_dir, "coords_3d.npy"), self.cache_coords3d, allow_pickle=False)
-        del self.cache_coords3d
-        gc.collect()  # Force garbage collection
+        if self.pp_config["export_coords3d"]:
+            self._stack_and_write_to_disk(self.cache_coords3d, CacheFilePaths.COORDS3D.value)
