@@ -14,6 +14,16 @@ data:
   train_render_img_names: DEFAULT
 
   render_img_directory: reports/xatlas
+
+preprocessing:
+  export_angles: false
+  export_coords3d: false
+
+  uv_backend: xatlas
+  uv_backend_options:
+    xatlas:
+      padding: 6
+
 model:
   loss: DEFAULT
 
@@ -31,8 +41,4 @@ training:
   epsilon: DEFAULT
   weight_decay: DEFAULT
 
-  uv_backend: xatlas
-  uv_backend_options: # TODO: Hier oder wo anders
-    xatlas: # TODO: Integrate these, for now just draft
-      padding: 4
 

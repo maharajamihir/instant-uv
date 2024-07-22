@@ -171,9 +171,9 @@ class ImageRenderer:
                     return_hit_mask=True
                 )
 
-                is_blender = True if isinstance(self.uv, dict) else False  # TODO: THIS IS TEMPORARY!!!!!!!!!
+                is_blender_based_vmapping = True if isinstance(self.uv, dict) else False  # TODO: THIS IS TEMPORARY!!!!!!!!!
 
-                if is_blender:  # TODO: THIS IS ALL TEMPORARY!!!
+                if is_blender_based_vmapping:  # TODO: THIS IS ALL TEMPORARY!!!
                     # NOTE: COPIED FROM map_uv_to_blender!!!!!!! BUT DOES NOT WORK BECAUSE HERE WE HAVE ONLY NPARRAY!!
                     uvs = []
                     for fid, vids, in zip(face_idxs, vertex_idxs_of_hit_faces):
