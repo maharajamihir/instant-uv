@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 
 from util.cameras import undistort_pixels_meshroom_radial_k3, DistortionTypes
 from util.utils import tensor_mem_size_in_bytes, load_mesh, map_to_UV, get_mapping, get_mapping_blender, \
-    map_to_UV_blender, normalize_values
+    map_to_UV_blender, normalize_values, get_mapping_gt_via_blender
 
 
 def get_ray_mesh_intersector(mesh):
@@ -371,7 +371,11 @@ class MeshViewPreProcessor:
     def get_uv_coords(self, barycentric_coords, face_idxs, vertex_idxs_of_hit_faces):
         uv_backend = self.pp_config["uv_backend"].lower()
 
-        if uv_backend == "blender":
+        if uv_backend == "gt":
+            mapping = get_mapping_gt_via_blender(self.mesh, self.split, self.config)
+            uv_coords = map_to_UV_blender(barycentric_coords, face_idxs, vertex_idxs_of_hit_faces, mapping)
+
+        elif uv_backend == "blender":
             # get uv coordinates
             mapping = get_mapping_blender(self.mesh, self.split, self.config)
             uv_coords = map_to_UV_blender(barycentric_coords, face_idxs, vertex_idxs_of_hit_faces, mapping)

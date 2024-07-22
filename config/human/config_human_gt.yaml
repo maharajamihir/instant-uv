@@ -16,9 +16,10 @@ data:
   render_img_directory: reports/gt
 
 preprocessing:
-  force_redo: false
   export_angles: false
   export_coords3d: false
+
+  uv_backend: gt
 
 model:
   loss: DEFAULT
@@ -37,4 +38,3 @@ training:
   epsilon: DEFAULT
   weight_decay: DEFAULT
 
-  uv_backend: blender

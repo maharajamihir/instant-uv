@@ -1,20 +1,18 @@
-# THE PARAMETERS OF THIS FILE ARE USED IF THE CORRESPONDING VALUE IS NOT DECLARED IN THE OTHER CONFIG!
-seed: 0
 method: InstantUV
 experiment:
   name: Default
-  split: human
-  description: Default Config for human
-
+  split: cat
+  description: Default Config for cat
 data:
-  raw_data_path: data/raw/human_dataset_v2_tiny/
-  preproc_data_path: data/preprocessed/human_dataset_v2_tiny/
-  mesh_path: data/raw/human/RUST_3d_Low1.obj
+  raw_data_path: data/raw/cat_dataset_v2_tiny/
+  preproc_data_path: data/preprocessed/cat_dataset_v2_tiny/default
+  # mesh_path: data/raw/cat_rescaled_rotated/12221_Cat_v1_l3.obj
+  mesh_path: data/gts/cat/cat_triangle_mesh_gt.obj
   img_height: 512
   img_width: 512
-  data_split: config/human/data_split.yaml
+  data_split: config/cat/data_split.yaml
   train_render_img_names:
-    - human000
+    - cat000
 
   render_img_directory: reports/
 
@@ -68,4 +66,4 @@ training:
   epsilon: 1e-08
   weight_decay: 0
 
-  use_wandb: false
+  use_wandb: true

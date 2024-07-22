@@ -12,3 +12,6 @@ _scripts_mihir/
 *.png
 logs/
 reports/
+
+uvs/
+models/

@@ -12,9 +12,7 @@ import argparse
 
 
 # Append src/
-sys.path.append("src/")
 sys.path.append(str(Path(__file__).parent.parent))
-sys.path.append(str(Path(__file__).parent))
 
 # Change into instant-uv
 os.chdir(Path(__file__).parent.parent.parent)
@@ -22,6 +20,10 @@ os.chdir(Path(__file__).parent.parent.parent)
 # Append scripts DIR
 SCRIPTS_DIR = str(Path(__file__).parent.parent / "tiny-cuda-nn/scripts")
 sys.path.append(SCRIPTS_DIR)
+
+# Remove src/model from path (matters when we debug train.py directly)
+while str(Path(__file__).parent) in sys.path:
+    sys.path.remove(str(Path(__file__).parent))
 
 from data.dataset import InstantUVDataset, InstantUVDataLoader
 from util.render import ImageRenderer, downscale_image
@@ -159,7 +161,9 @@ class Trainer:
         return uv, rgb, bary, vids, angles, angles2, c3d
 
     def experimental_seam_loss_init(self, uv_path, vids_of_hit_faces):
-        # BLENDER ONLY!!!
+        # BLENDER BASED VMAPPINGS ONLY!!!
+        if self.uv_backend == "xatlas":
+            raise NotImplementedError
         vmapping = np.load(uv_path, allow_pickle=True)
         d = {}
         for v in vmapping.values():
@@ -190,6 +194,7 @@ class Trainer:
         self.device = device
         self.model = model.to(self.device)
         self.config = config
+        self.name = self.config["experiment"]["name"].replace(" ", "_")
         self.use_wandb = self.config["training"]["use_wandb"]
         self.seam_factor = self.config["model"]["seam_loss"]  # TODO: Determine if this is good or not
 
@@ -223,7 +228,7 @@ class Trainer:
          val_vids,
          val_angles,
          val_angles2,
-         val_c3d) = self.load_data("train")  # FIXME: THIS LOOKS WRONG!! -> SHOULD BE VAL NO??
+         val_c3d) = self.load_data("val")
 
         self.val_data = InstantUVDataset(
             uv=val_uv_coords, rgb=val_expected_rgbs, points_xyz=val_bary_coords, angles=val_angles, coords3d=coords3d
@@ -256,15 +261,15 @@ class Trainer:
             self.loss_fn = lambda pred, target: torch.log(
                 1 + ((pred - target.to(pred.dtype)) / self.gamma) ** 2).mean()
 
-        xatlas_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "xatlas.obj")
+        xatlas_path = str(Path(config["data"]["preproc_data_path"]) / "xatlas.obj")
 
-        self.uv_backend = self.config["training"].get("uv_backend", "blender").lower()
+        self.uv_backend = self.config["preprocessing"]["uv_backend"].lower()
         # TODO: Refactor all this shit its HORRIBLE
-        if self.uv_backend == "blender":
+        if self.uv_backend == "blender" or self.uv_backend == "gt":
             uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "blender_uv.pkl")
             path_to_mesh = self.config["data"]["mesh_path"]
         else:
-            uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv.pkl")
+            uv_path = str(Path(config["data"]["preproc_data_path"]) / "uv.pkl")
             path_to_mesh = xatlas_path
 
         if self.seam_factor > 0:
@@ -277,8 +282,8 @@ class Trainer:
             verbose=True,
         )
 
-        self.render_scale = self.config["training"].get("render_scale", 2)
-        self.save_validation_images = self.config["training"].get("save_validation_images", False)
+        self.render_scale = self.config["training"]["render_scale"]
+        self.save_validation_images = self.config["training"]["save_validation_images"]
 
     def train(self):
         """
@@ -295,8 +300,9 @@ class Trainer:
         self.train_loader = InstantUVDataLoader(
             self.train_data, batch_size=self.config["training"]["batch_size"], shuffle=True
         )
+        bs_val = min(self.config["training"]["batch_size_val"], len(self.val_data))
         self.val_loader = InstantUVDataLoader(
-            self.val_data, batch_size=self.config["training"]["batch_size"], shuffle=False
+            self.val_data, batch_size=bs_val, shuffle=False
         )
         num_epochs = self.config["training"].get('epochs', 10)
         print("Length train loader:", len(self.train_loader))
@@ -318,17 +324,20 @@ class Trainer:
                 print("Validation Loss:", val_loss, "Validation PSNR:", val_psnr)
                 if self.use_wandb:
                     wandb.log({"epoch": epoch, "val_loss": val_loss, "val_psnr": val_psnr})
+
+                os.makedirs("models", exist_ok=True)
+                os.makedirs("uvs", exist_ok=True)
                 if val_loss < best_val:
                     best_val = val_loss
                     print("Saving model best (val_error)...")
                     # FIXME: Note i changed most of this to self.model (check if that was ok)
-                    torch.save(self.model.state_dict(), "model.pt")
-                    export_uv(self.model, "best_uv.png", resolution=self.uv_resolution)
+                    torch.save(self.model.state_dict(), f"models/model{'_'+self.name}.pt")
+                    export_uv(self.model, f"uvs/best_uv{'_'+self.name}.png", resolution=self.uv_resolution)
                 if val_psnr > best_val_psnr:
                     best_val_psnr = val_psnr
                     print("Saving model best (val_psnr)...")
-                    torch.save(self.model.state_dict(), "model_psnr.pt")
-                    export_uv(self.model, "best_uv_psnr.png", resolution=self.uv_resolution)
+                    torch.save(self.model.state_dict(), f"models/model{'_'+self.name}_psnr.pt")
+                    export_uv(self.model, f"uvs/best_uv{'_'+self.name}_psnr.png", resolution=self.uv_resolution)
 
     def _train_epoch(self):
         """
@@ -465,9 +474,11 @@ def get_args():
 
 
 if __name__ == "__main__":
+    from dotenv import load_dotenv
     args = get_args()
     DEFAULTS_HUMAN = "config/human/config_human_defaults.yaml"
     cfg = load_config(args.config_path, DEFAULTS_HUMAN)
+    load_dotenv("src/.env")
 
     mdl = InstantUV(cfg)
 

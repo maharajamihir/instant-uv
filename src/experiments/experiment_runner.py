@@ -38,19 +38,34 @@ DEFAULTS_CAT = "config/cat/config_cat_defaults.yaml"
 from util.utils import load_config, load_yaml
 
 
-def preprocess_if_required(config):
+def preprocess_if_required(config, force_preprocessing):
     dataset_path = config["data"]["raw_data_path"]
     out_dir = config["data"]["preproc_data_path"]
     mesh_path = config["data"]["mesh_path"]
     data_split = load_yaml(config["data"]["data_split"])
     mesh_views_list_train = data_split[f"mesh_views_list_train"]
+    mesh_views_list_val = data_split[f"mesh_views_list_val"]
+
+    # Train
     preprocess_dataset(
         split="train",
         dataset_path=dataset_path,
         path_to_mesh=mesh_path,
         out_dir=out_dir,
-        mesh_views_list_train=mesh_views_list_train,
-        config=config
+        mesh_views_list=mesh_views_list_train,
+        config=config,
+        force_preprocessing=force_preprocessing
+    )
+
+    # Val
+    preprocess_dataset(
+        split="val",
+        dataset_path=dataset_path,
+        path_to_mesh=mesh_path,
+        out_dir=out_dir,
+        mesh_views_list=mesh_views_list_val,
+        config=config,
+        force_preprocessing=force_preprocessing
     )
 
 
@@ -67,48 +82,48 @@ def train_with_config(config):
     trainer.train()
 
 
-def train(config):
+def train(config, force_preprocessing):
     print("Checking status of preprocessing.")
-    preprocess_if_required(config)
+    preprocess_if_required(config, force_preprocessing)
 
     print("Starting training.")
     train_with_config(config)
 
 
-def run_human_gt_blender():
+def run_human_gt(force_preprocessing):
     config_path = "config/human/config_human_gt.yaml"
     config = load_config(config_path, DEFAULTS_HUMAN)
-    train(config)
+    train(config, force_preprocessing)
 
 
-def run_human_xatlas():
+def run_human_xatlas(force_preprocessing):
     config_path = "config/human/config_human_xatlas.yaml"
     config = load_config(config_path, DEFAULTS_HUMAN)
-    train(config)
+    train(config, force_preprocessing)
 
 
-def run_human_blender():
-    config_path = "config/human/config_human_blender.yaml"
-    config = load_config(config_path, DEFAULTS_HUMAN)
-    train(config)
+# def run_human_blender(force_preprocessing):
+#     config_path = "config/human/config_human_blender.yaml"
+#     config = load_config(config_path, DEFAULTS_HUMAN)
+#     train(config, force_preprocessing)
 
 
-def run_cat_gt_blender():
-    config_path = "config/human/config_cat_gt.yaml"
+def run_cat_gt(force_preprocessing):
+    config_path = "config/cat/config_cat_gt.yaml"
     config = load_config(config_path, DEFAULTS_CAT)
-    train(config)
+    train(config, force_preprocessing)
 
 
-def run_cat_xatlas():
-    config_path = "config/human/config_cat_xatlas.yaml"
+def run_cat_xatlas(force_preprocessing):
+    config_path = "config/cat/config_cat_xatlas.yaml"
     config = load_config(config_path, DEFAULTS_CAT)
-    train(config)
+    train(config, force_preprocessing)
 
 
-def run_cat_blender():
-    config_path = "config/human/config_cat_blender.yaml"
-    config = load_config(config_path, DEFAULTS_CAT)
-    train(config)
+# def run_cat_blender(force_preprocessing):
+#     config_path = "config/human/config_cat_blender.yaml"
+#     config = load_config(config_path, DEFAULTS_CAT)
+#     train(config, force_preprocessing)
 
 
 def load_env():
@@ -117,4 +132,7 @@ def load_env():
 
 if __name__ == "__main__":
     load_env()
-    run_human_gt_blender()
+    run_human_gt(force_preprocessing=False)
+    # run_human_xatlas(force_preprocessing=False)
+    # run_cat_gt(force_preprocessing=False)
+    # run_cat_xatlas(force_preprocessing=False)

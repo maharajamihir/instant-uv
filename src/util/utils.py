@@ -401,6 +401,8 @@ def get_mapping_blender(mesh, split, config):
         bpy.ops.mesh.select_all(action='SELECT')
 
         # Unwrap UVs
+        assert False, ("here we should define what to do. either we can use blender smart uv project or the plugin "
+                       "Unwrap Me. Which i tested but we need to extract the proper commands first.")
         # bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.2)
         # Lets try transform to triangles
         # bpy.ops.mesh.quads_convert_to_tris(quad_method='BEAUTY', ngon_method='BEAUTY')
@@ -408,6 +410,54 @@ def get_mapping_blender(mesh, split, config):
         # Switch back to Object mode
         bpy.ops.object.mode_set(mode='OBJECT')
 
+        me = bpy.context.object.data
+        uv_layer = me.uv_layers.active.data
+
+        face_id_to_uv_mapping = {}
+        face_mapping = {}
+        for poly in me.polygons:
+            print("Polygon", poly.index)
+
+            # Find out what face we are
+            face = sorted([v for v in poly.vertices])
+
+            # For each particular face we get its own mapping
+            vertex_to_uv_mini = {}
+            for li in poly.loop_indices:
+                vi = me.loops[li].vertex_index
+                vertex_to_uv_mini[vi] = np.array(uv_layer[li].uv)
+            face_mapping[str(face)] = vertex_to_uv_mini
+
+        for i, f in enumerate(mesh.faces):
+            key = str(sorted(f))
+            face_id_to_uv_mapping[i] = face_mapping[key]
+
+        blender_uv = face_id_to_uv_mapping
+        with open(blender_path, 'wb') as f:
+            pickle.dump(blender_uv, f)
+        # Exit Blender
+        bpy.ops.wm.quit_blender()
+    else:
+        with open(blender_path, 'rb') as f:
+            blender_uv = pickle.load(f)
+    return blender_uv
+
+
+def get_mapping_gt_via_blender(mesh, split, config):
+    import bpy
+
+    obj_file = config["data"]["mesh_path"]
+    blender_path = str(Path(config["data"]["preproc_data_path"]) / split / "blender_uv.pkl")
+    if not os.path.isfile(blender_path):
+
+        # Clear existing scene data
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+
+        # Import OBJ file
+        bpy.ops.wm.obj_import(filepath=obj_file)
+
+        # Parse uv
+        # TODO: Technically everything below here is a duplicate
         me = bpy.context.object.data
         uv_layer = me.uv_layers.active.data
 
@@ -457,10 +507,10 @@ def get_mapping(mesh, split, config):
                  face of the mesh with its corresponding UV coordinates. Preferably, the mapping should be
                  in a format that can be easily used in the `map_to_UV` function.
     """
-    xatlas_path = str(Path(config["data"]["preproc_data_path"]) / split / "xatlas.obj")
-    v_path = str(Path(config["data"]["preproc_data_path"]) / split / "new_vertex_id_to_old_vertex_id.npy")
-    rv_path = str(Path(config["data"]["preproc_data_path"]) / split / "old_vertex_to_new_vertexes.pkl")
-    uv_path = str(Path(config["data"]["preproc_data_path"]) / split / "uv.pkl")
+    xatlas_path = str(Path(config["data"]["preproc_data_path"]) / "xatlas.obj")
+    v_path = str(Path(config["data"]["preproc_data_path"]) / "new_vertex_id_to_old_vertex_id.npy")
+    rv_path = str(Path(config["data"]["preproc_data_path"]) / "old_vertex_to_new_vertexes.pkl")
+    uv_path = str(Path(config["data"]["preproc_data_path"]) / "uv.pkl")
     if not os.path.isfile(xatlas_path):
         # Extract with xatlas
         atlas = xatlas.Atlas()
@@ -468,7 +518,7 @@ def get_mapping(mesh, split, config):
 
         chart_options = xatlas.ChartOptions()
         pack_options = xatlas.PackOptions()
-        pack_options.padding = 4  # TODO: from config
+        pack_options.padding = config["preprocessing"]["uv_backend_options"]["xatlas"]["padding"]
 
         print("Generating chart...")
         atlas.generate(chart_options, pack_options)
