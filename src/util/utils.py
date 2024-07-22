@@ -368,7 +368,7 @@ def get_mapping_blender(mesh, split, config):
     # Replace with the path to your OBJ file
     # obj_file = "/home/morkru/Desktop/Github/instant-uv/data/raw/human/RUST_3d_Low1.obj"
     # obj_file = str(Path(config["data"]["preproc_data_path"]) / split / "xatlas.obj")
-    obj_file = "/data/gts/human/triangle.obj"
+    obj_file = "data/gts/human/human_triangle_mesh_gt.obj"
     # obj_file = "/home/morkru/Desktop/Github/instant-uv/data/preprocessed/triangle_CAT.obj"
     # new_mesh = load_mesh(obj_file)
 
