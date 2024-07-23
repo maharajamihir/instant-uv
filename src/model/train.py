@@ -276,7 +276,7 @@ if __name__ == "__main__":
     wandb.init(
         project="instant-uv-encodings",
         # track hyperparameters and run metadata
-        config=config
+        config=tiny_nn_config
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
