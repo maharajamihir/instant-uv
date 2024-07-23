@@ -11,9 +11,8 @@
 		"l2_reg": 1e-6
 	},
 	"encoding": {
-		"otype": "Identity", 
-		"scale": 1.0,        
-		"offset": 0.0        
+		"otype": "OneBlob", 
+		"n_bins": 16       
 	}, 
 	"network": {
 		"otype": "FullyFusedMLP",
