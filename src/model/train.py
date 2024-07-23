@@ -273,7 +273,7 @@ if __name__ == "__main__":
 
     # start a new wandb run to track this script
     wandb.init(
-        project="instant-uv",
+        project="instant-uv-3d",
         # track hyperparameters and run metadata
         config=config
     )
