@@ -31,25 +31,34 @@ DEFAULTS_CAT = "config/cat/config_cat_defaults.yaml"
 
 def evaluate_qualitative(model, config):
     model.eval()
-
+    print(config)
+    #breakpoint()
     # Load data split
     data_split_path = config.get("data", {}).get("data_split")
     if data_split_path:
         with open(data_split_path, "rb") as f:
             data_split = yaml.safe_load(f)
 
-    # initialize renderer
-    uv_pkl_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv.pkl")
-    xatlas_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "xatlas.obj")
+    xatlas_path = str(Path(config["data"]["preproc_data_path"]) / "xatlas.obj")
+
+    uv_backend = config["preprocessing"]["uv_backend"].lower()
+    # TODO: Refactor all this shit its HORRIBLE
+    if uv_backend == "blender" or uv_backend == "gt":
+        uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "blender_uv.pkl")
+        path_to_mesh = config["data"]["mesh_path"]
+    else:
+        uv_path = str(Path(config["data"]["preproc_data_path"]) / "uv.pkl")
+        path_to_mesh = xatlas_path
 
     image_renderer = ImageRenderer(
-        xatlas_path,
+        path_to_mesh=path_to_mesh,
         dataset_path=config["data"]["raw_data_path"],
-        uv_path=uv_pkl_path
-    )
+        uv_path=uv_path,
+        verbose=True,
+    ) 
 
     # compute psnr, dssim, lpips
-    images_np, gts, masks = image_renderer.render_views(
+    images_np, gts, masks, hit_counts = image_renderer.render_views(
         model,
         mesh_views_list=data_split["mesh_views_list_val"],
         save_validation_images=False  # TODO: Make this a config arg (Saving takes ~2.2 of total 2.6 seconds
@@ -87,16 +96,20 @@ def test_speed(model, config):
 
 
 if __name__ == "__main__":
-    weights_path = "model_psnr.pt" # FIXME sorry for hardcoding
+    weights_path = "models/model_XATLAS_CAT_psnr.pt" # FIXME sorry for hardcoding
 
-    config_path = "config/human/config_human_gt.yaml" # FIXME sorry for hardcode
-    config = load_config(config_path, DEFAULTS_HUMAN)
+    config_path = "config/cat/config_cat_xatlas.yaml" # FIXME sorry for hardcode
+    config = load_config(config_path, DEFAULTS_CAT)
 
     model = InstantUV(config)
     model.load_state_dict(torch.load(weights_path))
     model.eval()
-    print(model)
+    # print(model)
+
+    
 
     stats = evaluate_qualitative(model, config)
     print("\033[1m" + str(stats) + "\033[0m")
     test_speed(model, config)
+    num_params = sum(p.numel() for p in model.parameters())
+    print(num_params)
