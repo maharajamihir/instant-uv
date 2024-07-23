@@ -58,6 +58,35 @@ class InstantUV(nn.Module):
         points_uv = map_to_UV(points_xyz)
         return self.forward(points_uv)
 
+class InstantUV3D(nn.Module):
+    """
+    TODO write docstring
+    Model that learns the stored texture in the image implicitly in 2D using Instant-NGP
+
+    ##During training the input to our model will be our preprocessed points 
+    ##i.e. 2D points from an image which represents a UV map.
+    A small ablation experiment on 3d coordinates as input
+
+    The output should be an 3 channel (normalized?) vector representing the RGB values. 
+    For understanding check the dummy model below.
+    """
+    
+    def __init__(self, tiny_nn_config):
+        super().__init__()
+        self.mapping = None # TODO
+        model = tcnn.NetworkWithInputEncoding(n_input_dims=3, n_output_dims=3,
+                                          encoding_config=tiny_nn_config["encoding"],
+                                          network_config=tiny_nn_config["network"])
+        self.model = model
+        self.params = model.params
+
+    def forward(self, points_xyz):
+        return self.model(points_xyz)
+
+    @torch.no_grad()
+    def inference(self, points_xyz):
+        # points_uv = map_to_UV(points_xyz)
+        return self.forward(points_xyz)
 
 class DummyInstantUV(nn.Module):
     """

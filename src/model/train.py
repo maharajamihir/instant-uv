@@ -25,7 +25,7 @@ sys.path.append(SCRIPTS_DIR)
 from data.dataset import InstantUVDataset, InstantUVDataLoader
 from util.render import ImageRenderer
 from util.utils import compute_psnr, load_config, export_uv
-from model import InstantUV
+from model import InstantUV, InstantUV3D
 
 
 class Trainer:
@@ -61,6 +61,10 @@ class Trainer:
         train_uv_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "uv_coords.npy")
         train_rgb_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "expected_rgbs.npy")
         train_bary_path = str(Path(config["data"]["preproc_data_path"]) / "train" / "barycentric_coords.npy")
+
+        # Filter out only date with xyz coords?
+
+
         train_uv_coords = np.load(train_uv_path)
         train_expected_rgbs = np.load(train_rgb_path)
         train_bary_coords = np.load(train_bary_path)
@@ -177,8 +181,10 @@ class Trainer:
             loss: The loss value for the training step.
         """
         self.optimizer.zero_grad()
-        uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
-        pred_rgb = self.model(uv)
+        # uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
+        # pred_rgb = self.model(uv)
+        xyz, target_rgb = batch["xyz"].to(self.device), batch["rgb"].to(self.device)
+        pred_rgb = self.model(xyz)
 
         loss = self.loss_fn(pred_rgb, target_rgb)
         loss.backward()
@@ -233,8 +239,10 @@ class Trainer:
         Returns:
             loss: The loss value for the validation step.
         """
-        uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
-        pred_rgb = self.model(uv)
+        # uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
+        xyz, target_rgb = batch["xyz"].to(self.device), batch["rgb"].to(self.device)
+
+        pred_rgb = self.model(xyz)
         loss = self.loss_fn(pred_rgb, target_rgb)
 
         return loss.item()
@@ -260,8 +268,8 @@ if __name__ == "__main__":
     with open(args.tiny_nn_config) as tiny_nn_config_file:
         tiny_nn_config = json.load(tiny_nn_config_file)
 
-    model = InstantUV(tiny_nn_config)
-
+    # model = InstantUV(tiny_nn_config)
+    model = InstantUV3D(tiny_nn_config)
 
     # start a new wandb run to track this script
     wandb.init(
