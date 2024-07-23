@@ -11,22 +11,9 @@
 		"l2_reg": 1e-6
 	},
 	"encoding": {
-		"otype": "Composite",
-		"nested": [
-			{
-				"n_dims_to_encode": 3, 
-				"otype": "TriangleWave",
-				"n_frequencies": 12
-			},
-			{
-				"n_dims_to_encode": 5, 
-				"otype": "OneBlob",
-				"n_bins": 4
-			},
-			{
-				"otype": "Identity"
-			}
-		]
+		"otype": "Identity", 
+		"scale": 1.0,        
+		"offset": 0.0        
 	}, 
 	"network": {
 		"otype": "FullyFusedMLP",
