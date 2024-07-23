@@ -11,8 +11,8 @@
 		"l2_reg": 1e-6
 	},
 	"encoding": {
-		"otype": "OneBlob", 
-		"n_bins": 16       
+		"otype": "TriangleWave", 
+		"n_frequencies": 12      
 	}, 
 	"network": {
 		"otype": "FullyFusedMLP",
