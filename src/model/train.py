@@ -181,10 +181,11 @@ class Trainer:
             loss: The loss value for the training step.
         """
         self.optimizer.zero_grad()
-        # uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
-        # pred_rgb = self.model(uv)
-        xyz, target_rgb = batch["xyz"].to(self.device), batch["rgb"].to(self.device)
-        pred_rgb = self.model(xyz)
+        uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
+        pred_rgb = self.model(uv)
+
+        # xyz, target_rgb = batch["xyz"].to(self.device), batch["rgb"].to(self.device)
+        # pred_rgb = self.model(xyz)
 
         loss = self.loss_fn(pred_rgb, target_rgb)
         loss.backward()
@@ -239,10 +240,10 @@ class Trainer:
         Returns:
             loss: The loss value for the validation step.
         """
-        # uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
-        xyz, target_rgb = batch["xyz"].to(self.device), batch["rgb"].to(self.device)
+        uv, target_rgb = batch["uv"].to(self.device), batch["rgb"].to(self.device)
+        # xyz, target_rgb = batch["xyz"].to(self.device), batch["rgb"].to(self.device)
 
-        pred_rgb = self.model(xyz)
+        pred_rgb = self.model(uv)
         loss = self.loss_fn(pred_rgb, target_rgb)
 
         return loss.item()
@@ -268,12 +269,12 @@ if __name__ == "__main__":
     with open(args.tiny_nn_config) as tiny_nn_config_file:
         tiny_nn_config = json.load(tiny_nn_config_file)
 
-    # model = InstantUV(tiny_nn_config)
-    model = InstantUV3D(tiny_nn_config)
+    model = InstantUV(tiny_nn_config)
+    # model = InstantUV3D(tiny_nn_config)
 
     # start a new wandb run to track this script
     wandb.init(
-        project="instant-uv-3d",
+        project="instant-uv-encodings",
         # track hyperparameters and run metadata
         config=config
     )
