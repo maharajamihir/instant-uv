@@ -130,3 +130,49 @@ class InstantUVDataLoader(DataLoader):
         batch = self.dataset.__getitem__(batch_idxs)
 
         return batch
+
+
+
+""" EXPERIMENTAL """
+
+
+class InstantUVDataset2(Dataset):
+    """
+    Dataset class for handling UV, RGB, and optional 3D point data.
+
+    Args:
+        uv (tensor): Tensor containing UV coordinates.
+        rgb (tensor): Tensor containing RGB values.
+        points_xyz (tensor, optional): Tensor containing 3D point coordinates. Default is None.
+    """
+
+    def __init__(self, uv, rgb):
+        # points_xyz are optional because we don't really need them for training.
+        self.uv = torch.from_numpy(uv)
+        self.rgb = torch.from_numpy(rgb)
+
+    def __len__(self):
+        """
+        Returns the length of the dataset.
+
+        Returns:
+            int: Number of samples in the dataset.
+        """
+        return len(self.uv)
+
+    def __getitem__(self, idx):
+        """
+        Retrieves a single sample from the dataset.
+
+        Args:
+            idx (int): Index of the sample to retrieve.
+
+        Returns:
+            dict: A dictionary containing the UV coordinates, RGB values,
+                  and optionally the 3D point coordinates for the sample.
+        """
+        sample = {
+            'uv': self.uv[idx],
+            'rgb': self.rgb[idx],
+        }
+        return sample
