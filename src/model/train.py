@@ -198,7 +198,7 @@ class Trainer:
         self.use_wandb = self.config["training"]["use_wandb"]
         self.seam_factor = self.config["model"]["seam_loss"]  # TODO: Determine if this is good or not
 
-        if self.use_wandb:
+        if False and self.use_wandb:
             self.assert_wandb()
 
         # Load train data

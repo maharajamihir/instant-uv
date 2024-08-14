@@ -16,4 +16,4 @@ preprocessing:
   uv_backend: xatlas
   uv_backend_options:
     xatlas:
-      padding: 6
+      padding: 20

@@ -32,7 +32,6 @@ DEFAULTS_CAT = "config/cat/config_cat_defaults.yaml"
 def evaluate_qualitative(model, config):
     model.eval()
     print(config)
-    #breakpoint()
     # Load data split
     data_split_path = config.get("data", {}).get("data_split")
     if data_split_path:
@@ -61,7 +60,7 @@ def evaluate_qualitative(model, config):
     images_np, gts, masks, hit_counts = image_renderer.render_views(
         model,
         mesh_views_list=data_split["mesh_views_list_val"],
-        save_validation_images=False  # TODO: Make this a config arg (Saving takes ~2.2 of total 2.6 seconds
+        save_validation_images=False # TODO: Make this a config arg (Saving takes ~2.2 of total 2.6 seconds
     )
     val_psnrs = np.zeros(len(images_np), dtype=np.float32)
     val_ssims = np.zeros(len(images_np), dtype=np.float32)
@@ -96,10 +95,10 @@ def test_speed(model, config):
 
 
 if __name__ == "__main__":
-    weights_path = "models/model_XATLAS_CAT_psnr.pt" # FIXME sorry for hardcoding
+    weights_path = "models/model_XATLAS_Human_psnr.pt" # FIXME sorry for hardcoding
 
-    config_path = "config/cat/config_cat_xatlas.yaml" # FIXME sorry for hardcode
-    config = load_config(config_path, DEFAULTS_CAT)
+    config_path = "config/human/config_human_xatlas.yaml" # FIXME sorry for hardcode
+    config = load_config(config_path, DEFAULTS_HUMAN)
 
     model = InstantUV(config)
     model.load_state_dict(torch.load(weights_path))
@@ -110,6 +109,6 @@ if __name__ == "__main__":
 
     stats = evaluate_qualitative(model, config)
     print("\033[1m" + str(stats) + "\033[0m")
-    test_speed(model, config)
-    num_params = sum(p.numel() for p in model.parameters())
-    print(num_params)
+    # test_speed(model, config)
+    # num_params = sum(p.numel() for p in model.parameters())
+    # print(num_params)

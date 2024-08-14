@@ -147,13 +147,13 @@ class ImageRenderer:
             gt_img = self.gt_image_cache.get(mesh_view)
             if gt_img is None:
                 gt_img = imageio.imread(os.path.join(mesh_view_path, "image", "000.png"))
-                gt_img[~obj_mask] = [0, 0, 0]
+                gt_img[~obj_mask] = [255, 255, 255]
                 self.gt_image_cache.put(mesh_view, gt_img)
 
             # Init the rendered image
-            img = np.zeros((gt_img.shape[0] * scale, gt_img.shape[1] * scale, gt_img.shape[2]), dtype=np.int16)
-            img[~obj_mask_scaled] = [0, 0, 0]
-            scaled_ray_hit_count = np.zeros((gt_img.shape[0] * scale, gt_img.shape[1] * scale), dtype=np.int16)
+            img = np.ones((gt_img.shape[0] * scale, gt_img.shape[1] * scale, gt_img.shape[2]), dtype=np.int16)
+            img[~obj_mask_scaled] = [255, 255, 255]
+            scaled_ray_hit_count = np.ones((gt_img.shape[0] * scale, gt_img.shape[1] * scale), dtype=np.int16)
 
             # Calculate the rays if we don't have uv_coords in the cache
             coords_2d_normalized = self.uv_cache.get(mesh_view)

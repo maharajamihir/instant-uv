@@ -9,5 +9,5 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 1
-map_Kd Desktop/Github/instant-uv/data/raw/human/RUST_3d_Low1_Difuse.jpg
-map_Bump Desktop/Github/instant-uv/data/raw/human/RUST_3d_Low1_Bump.jpg
+map_Kd /usr/stud/mahajanm/3dml/instant-uv/data/raw/human/RUST_3d_Low1_Difuse.jpg
+map_Bump /usr/stud/mahajanm/3dml/instant-uv/data/raw/human/RUST_3d_Low1_Bump.jpg

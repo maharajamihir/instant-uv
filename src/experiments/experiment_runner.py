@@ -101,6 +101,11 @@ def run_human_xatlas(force_preprocessing):
     config = load_config(config_path, DEFAULTS_HUMAN)
     train(config, force_preprocessing)
 
+def run_cat_xatlas_padding(force_preprocessing, padding):
+    config_path = "config/cat/config_cat_xatlas.yaml"
+    config = load_config(config_path, DEFAULTS_CAT)
+    config["preprocessing"]["uv_backend_options"]["xatlas"]["padding"] = padding
+    train(config, force_preprocessing)
 
 # def run_human_blender(force_preprocessing):
 #     config_path = "config/human/config_human_blender.yaml"
@@ -132,7 +137,7 @@ def load_env():
 
 if __name__ == "__main__":
     load_env()
-    run_human_gt(force_preprocessing=False)
-    # run_human_xatlas(force_preprocessing=False)
+    # run_human_gt(force_preprocessing=True)
+    run_cat_xatlas_padding(force_preprocessing=False, padding=20)
     # run_cat_gt(force_preprocessing=False)
-    # run_cat_xatlas(force_preprocessing=False)
+    # run_cat_xatlas(force_preprocessing=True)
