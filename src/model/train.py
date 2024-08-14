@@ -25,7 +25,7 @@ sys.path.append(SCRIPTS_DIR)
 while str(Path(__file__).parent) in sys.path:
     sys.path.remove(str(Path(__file__).parent))
 
-from data.dataset import InstantUVDataset, InstantUVDataLoader
+from data.dataset import InstantUVDataset, InstantUVDataLoader, WeightedDataLoader
 from util.render import ImageRenderer, downscale_image
 from util.utils import compute_psnr, load_config, export_uv, export_reference_image, load_np
 from util.enums import CacheFilePaths
@@ -250,10 +250,13 @@ class Trainer:
         # FIXME would it also work if we just used nn.MSELoss?
         # or does the normalizing improve this significantly?
         self.loss = self.config["model"].get("loss", "L2").lower()
-        assert self.loss in ["l1", "l2", "c"], "Loss must be either L1 or L2 or c"
-        if self.loss == "l2":
+        assert self.loss in ["l1", "l2", "l2r", "c"], "Loss must be either L1 or L2 or l2n or c"
+        if self.loss == "l2r":
             self.loss_fn = lambda pred, target: (
-                    (pred - target.to(pred.dtype)) ** 2 / (pred.detach() ** 2 + 0.01)).mean()
+                    (pred - target.to(pred.dtype)) ** 2 / (pred.detach() ** 2 + 0.01)
+            ).mean()
+        elif self.loss == "l2":
+            self.loss_fn = lambda pred, target: torch.mean((pred - target.to(pred.dtype)) ** 2)
         elif self.loss == "l1":
             self.loss_fn = lambda pred, target: torch.abs(pred - target.to(pred.dtype)).mean()
         elif self.loss == "c":
@@ -300,6 +303,9 @@ class Trainer:
         self.train_loader = InstantUVDataLoader(
             self.train_data, batch_size=self.config["training"]["batch_size"], shuffle=True
         )
+        # self.train_loader = WeightedDataLoader(
+        #     self.train_data, batch_size=self.config["training"]["batch_size"]
+        # )
         bs_val = min(self.config["training"]["batch_size_val"], len(self.val_data))
         self.val_loader = InstantUVDataLoader(
             self.val_data, batch_size=bs_val, shuffle=False
@@ -325,19 +331,24 @@ class Trainer:
                 if self.use_wandb:
                     wandb.log({"epoch": epoch, "val_loss": val_loss, "val_psnr": val_psnr})
 
+                # TODO: REMOVE
+                export_uv(self.model, f"random.png", resolution=(512,512))
+
                 os.makedirs("models", exist_ok=True)
                 os.makedirs("uvs", exist_ok=True)
                 if val_loss < best_val:
                     best_val = val_loss
                     print("Saving model best (val_error)...")
                     # FIXME: Note i changed most of this to self.model (check if that was ok)
-                    torch.save(self.model.state_dict(), f"models/model{'_'+self.name}.pt")
-                    export_uv(self.model, f"uvs/best_uv{'_'+self.name}.png", resolution=self.uv_resolution)
+                    torch.save(self.model.state_dict(), f"models/model{'_' + self.name}.pt")
+                    # if self.config["training"]["save_uvs"]:
+                    #     export_uv(self.model, f"uvs/best_uv{'_' + self.name}.png", resolution=self.uv_resolution)
                 if val_psnr > best_val_psnr:
                     best_val_psnr = val_psnr
                     print("Saving model best (val_psnr)...")
-                    torch.save(self.model.state_dict(), f"models/model{'_'+self.name}_psnr.pt")
-                    export_uv(self.model, f"uvs/best_uv{'_'+self.name}_psnr.png", resolution=self.uv_resolution)
+                    torch.save(self.model.state_dict(), f"models/model{'_' + self.name}_psnr.pt")
+                    if self.config["training"]["save_uvs"]:
+                        export_uv(self.model, f"uvs/best_uv{'_' + self.name}_psnr.png", resolution=self.uv_resolution)
 
     def _train_epoch(self):
         """
@@ -363,10 +374,11 @@ class Trainer:
             seam2 = self.model(self.loss_pairs[:, 1, :])
 
             # Use L1 Loss
-            loss_tensor += (
+            loss_tensor = loss_tensor + (
                     self.seam_factor *
                     (lambda pred, target: torch.abs(pred - target.to(pred.dtype)).mean())(seam1, seam2)
             )
+            return loss_tensor
         return 0.0
 
     def _train_step(self, batch):
@@ -475,6 +487,7 @@ def get_args():
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
+
     args = get_args()
     DEFAULTS_HUMAN = "config/human/config_human_defaults.yaml"
     cfg = load_config(args.config_path, DEFAULTS_HUMAN)

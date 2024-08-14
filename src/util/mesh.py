@@ -1,6 +1,7 @@
 ######################################################################################################
 # Code mainly borrowed from https://github.com/tum-vision/intrinsic-neural-fields/blob/main/mesh.py  #
 ######################################################################################################
+from typing import Union
 
 import numpy as np
 import torch
@@ -21,7 +22,7 @@ from util.utils import tensor_mem_size_in_bytes, load_mesh, map_to_UV, get_mappi
     map_to_UV_blender, normalize_values, get_mapping_gt_via_blender
 
 
-def get_ray_mesh_intersector(mesh):
+def get_ray_mesh_intersector(mesh) -> Union[trimesh.ray.ray_pyembree.RayMeshIntersector, trimesh.ray.ray_triangle.RayMeshIntersector]:
     try:
         import pyembree
         return trimesh.ray.ray_pyembree.RayMeshIntersector(mesh)

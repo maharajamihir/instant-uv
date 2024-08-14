@@ -1,5 +1,6 @@
+import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 
 
 class InstantUVDataset(Dataset):
@@ -130,3 +131,96 @@ class InstantUVDataLoader(DataLoader):
         batch = self.dataset.__getitem__(batch_idxs)
 
         return batch
+
+
+# EXPERIMENTAL
+
+class WeightedDataLoader(DataLoader):
+    """
+    DataLoader class for batching and shuffling dataset samples with importance sampling based on density.
+
+    Args:
+        dataset (Dataset): The dataset to load data from.
+        batch_size (int): Number of samples per batch.
+        shuffle (bool, optional): Whether to shuffle the data at every epoch. Default is True.
+        grid_size (int, optional): Number of grid cells per dimension for density estimation. Default is 10.
+        use_weights (bool, optional): Whether to use importance sampling with weights. Default is True.
+    """
+
+    def __init__(self, dataset, batch_size, grid_size=20):
+        self.grid_size = grid_size
+        self.weights = self._calculate_weights(dataset)
+        sampler = WeightedRandomSampler(self.weights, len(self.weights), replacement=True)
+        super().__init__(dataset, batch_size=batch_size, sampler=sampler)
+
+        self.n_samples = len(dataset)
+        self.n_batches = (self.n_samples + self.batch_size - 1) // self.batch_size
+
+    def _calculate_weights(self, dataset):
+        """
+        Calculate sampling weights based on the density of points in grid cells.
+        """
+        uv = dataset.uv.numpy()  # Convert tensor to numpy array
+
+        # Normalize coordinates to grid size
+        grid_x = (uv[:, 0] * self.grid_size).astype(int)
+        grid_y = (uv[:, 1] * self.grid_size).astype(int)
+
+        # Calculate grid cell counts
+        grid_counts = np.zeros((self.grid_size, self.grid_size), dtype=int)
+        np.add.at(grid_counts, (grid_x, grid_y), 1)
+
+        # Calculate weights
+        weights = 1.0 / grid_counts[grid_x, grid_y]
+
+        # Normalize weights
+        weights = weights.astype(np.float32)
+        weights /= weights.sum()
+
+        return weights
+
+
+
+""" EXPERIMENTAL """
+
+
+class InstantUVDataset2(Dataset):
+    """
+    Dataset class for handling UV, RGB, and optional 3D point data.
+
+    Args:
+        uv (tensor): Tensor containing UV coordinates.
+        rgb (tensor): Tensor containing RGB values.
+        points_xyz (tensor, optional): Tensor containing 3D point coordinates. Default is None.
+    """
+
+    def __init__(self, uv, rgb):
+        # points_xyz are optional because we don't really need them for training.
+        self.uv = np.array([torch.from_numpy(u) for u in uv], dtype=object)
+        self.rgb = torch.from_numpy(rgb)
+
+    def __len__(self):
+        """
+        Returns the length of the dataset.
+
+        Returns:
+            int: Number of samples in the dataset.
+        """
+        return len(self.uv)
+
+    def __getitem__(self, idx):
+        """
+        Retrieves a single sample from the dataset.
+
+        Args:
+            idx (int): Index of the sample to retrieve.
+
+        Returns:
+            dict: A dictionary containing the UV coordinates, RGB values,
+                  and optionally the 3D point coordinates for the sample.
+        """
+        sample = {
+            'uv': self.uv[idx],
+            'rgb': self.rgb[idx],
+        }
+        return sample

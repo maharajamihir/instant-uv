@@ -51,7 +51,7 @@ class InstantUV(nn.Module):
             "encoding": config["model"]["encoding"],
             "network": config["model"]["network"]
         }
-
+        self.config = config
         model = tcnn.NetworkWithInputEncoding(n_input_dims=self.tiny_nn_config["n_input_dims"],
                                               n_output_dims=self.tiny_nn_config["n_output_dims"],
                                               encoding_config=self.tiny_nn_config["encoding"],

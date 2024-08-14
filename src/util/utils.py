@@ -647,9 +647,13 @@ def export_uv(model, path, resolution=(700, 700), n_channels=3, device="cuda"):
 
 def export_reference_image(dataset, path, resolution, device="cpu"):
     # Get predictions for all that we have in dataset
-    input = dataset.uv.to(device)
+    input = torch.vstack([*dataset.uv]).to(device) if isinstance(dataset.uv.dtype, object) else dataset.uv.to(device)
     pixel_xy = (input * torch.tensor(resolution, device=device)).long()
-    gt = dataset.rgb.to(device)
+    if isinstance(dataset.uv.dtype, object):
+        helper = np.array([len(i) for i in dataset.uv])
+        gt = torch.from_numpy(np.repeat(dataset.rgb.numpy(), helper, axis=0)).to(device)
+    else:
+        gt = dataset.rgb.to(device)
     # Multiply predictions by 255 and convert to int in one step
     scaled_gt = (gt * 255).type(torch.uint8)
 
@@ -697,9 +701,9 @@ def normalize_values(values, min_val, max_val):
     return (values - min_val) / (max_val - min_val)
 
 
-def load_np(path, allow_not_exists):
+def load_np(path, allow_not_exists, allow_pickle=False):
     try:
-        return np.load(path)
+        return np.load(path, allow_pickle=allow_pickle)
     except FileNotFoundError as e:
         if allow_not_exists:
             return None

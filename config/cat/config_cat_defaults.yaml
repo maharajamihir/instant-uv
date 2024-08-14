@@ -59,6 +59,7 @@ training:
   batch_size_val: 262144
   render_scale: 1  # TODO: Probably deprecated this does not improve anything
   save_validation_images: false
+  save_uvs: false
 
   lr: 1e-3
   beta1: 0.9
