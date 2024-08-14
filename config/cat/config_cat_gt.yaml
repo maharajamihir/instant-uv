@@ -1,0 +1,6 @@
+# EMPTY == DEFAULT
+seed: 0
+experiment:
+  name: GT CAT
+  split: cat
+  description: GT Config for cat

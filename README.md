@@ -1,6 +1,7 @@
-# InstantUV
-InstantUV: Fast Implicit Texture Learning for 2D Mesh Rendering
+# Instant-UV: Fast Implicit Texture Learning for 2D Mesh Rendering
+![Architecture](./arch-fig.png)
 
+# Abstract 
 Multiresolution feature grid encodings have been shown to significantly accelerate neural representations due to the requirement of smaller MLPs. In this work, we introduce Instant-UV, a novel method for representing texture on meshes that blends multiresolution grid encodings with traditional UV mapping. We evaluate our method on the multi-view texture reconstruction task and show a speedup of over a magnitude to baseline methods while not dependent on the mesh resolution.
 
 # Work with InstantUV
@@ -33,47 +34,17 @@ Tipp: Run the preprocessing with the [`nice`](https://man7.org/linux/man-pages/m
 
 
 ## Train model
+Using the preprocessed data you can train the model on eg. the human object by running
 ```bash
-python src/model/train.py
+python src/model/train.py --config_path config/human/config_human.yaml
 ```
 
 ## Visualize
+For now during training, for every eval step, all the views in the val data-split will be rendered into the render/ directory :)
 
 ## Run experiments
 
+Refer to `src/experiments/experiments.py`. Here we have defined some functions which you can run to reproduce the results in our paper. 
+### Note for using wandb:
+If `training>use_wandb` is set in (config.yaml) an .env file must be created in `src/.env` with WANDB_API_KEY=<<your-key>>
 
-# Notes
-## Pipeline 
-
-We have the untextured 3d object as a mesh and we multiview images of our object (colored).
-
-(mesh, images) -> (3d coordinates, rgb value) -> 
-
--> 3d coordinate -> unwrap mesh into UV coordinates -> (3d coords, 2d coordinates, rgb values)
- 
- f(3d coordinate) = rgb value
-
- h(3d coordinate) = 2d coodinate
- g(2d coodinate) = rgb value
-
- g(h(x)) = f(x)
-
-<hr/>
-
-### References
-
-[1] Lukas Koestler, Daniel Grittner, Michael Moeller, Daniel Cremers, and Zorah Lähner. Intrinsic
-neural fields: Learning functions on manifolds. In European Conference on Computer Vision,
-pages 622–639. Springer, 2022. 
-
-[2] Thomas Müller, Alex Evans, Christoph Schied, and Alexander Keller. Instant neural graphics
-primitives with a multiresolution hash encoding. ACM transactions on graphics (TOG), 41(4):
-1–15, 2022.
-
-[3] Michael Oechsle, Lars Mescheder, Michael Niemeyer, Thilo Strauss, and Andreas Geiger. Texture
-fields: Learning texture representations in function space. In Proceedings of the IEEE/CVF
-International Conference on Computer Vision, pages 4531–4540, 2019.
-
-[4] Fanbo Xiang, Zexiang Xu, Milos Hasan, Yannick Hold-Geoffroy, Kalyan Sunkavalli, and Hao
-Su. Neutex: Neural texture mapping for volumetric neural rendering. In Proceedings of the
-IEEE/CVF Conference on Computer Vision and Pattern Recognition, pages 7119–7128, 2021.

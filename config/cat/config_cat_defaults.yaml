@@ -1,0 +1,69 @@
+method: InstantUV
+experiment:
+  name: Default
+  split: cat
+  description: Default Config for cat
+data:
+  raw_data_path: data/raw/cat_dataset_v2_tiny/
+  preproc_data_path: data/preprocessed/cat_dataset_v2_tiny/default
+  # mesh_path: data/raw/cat_rescaled_rotated/12221_Cat_v1_l3.obj
+  mesh_path: data/gts/cat/cat_triangle_mesh_gt.obj
+  img_height: 512
+  img_width: 512
+  data_split: config/cat/data_split.yaml
+  train_render_img_names:
+    - cat000
+
+  render_img_directory: reports/
+
+preprocessing:
+  export_angles: false
+  export_coords3d: false
+
+  uv_backend: gt
+  uv_backend_options:
+    xatlas: # TODO: Integrate these, for now just draft
+      padding: 4
+    blender:
+      padding: 4
+
+model:
+  loss: "L1"
+  seam_loss: -1  # Negative values <=> Seam loss not used
+
+  # TNN CONFIG
+  n_input_dims: 2
+  n_output_dims: 3
+  encoding:
+    otype: "HashGrid"
+    n_levels: 18
+    n_features_per_level: 4
+    log2_hashmap_size: 20
+    base_resolution: 16
+    per_level_scale: 1.5
+  network:
+    otype: "FullyFusedMLP"
+    activation: "ReLU"
+    output_activation: "Sigmoid"
+    n_neurons: 64
+    n_hidden_layers: 3
+
+
+training:
+  device: AUTO
+
+  epochs: 101
+  eval_every: 10
+  checkpoint_every: 20
+  batch_size: 1000
+  batch_size_val: 262144
+  render_scale: 1  # TODO: Probably deprecated this does not improve anything
+  save_validation_images: false
+
+  lr: 1e-3
+  beta1: 0.9
+  beta2: 0.999
+  epsilon: 1e-08
+  weight_decay: 0
+
+  use_wandb: false
