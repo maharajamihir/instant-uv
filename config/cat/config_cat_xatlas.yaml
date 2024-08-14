@@ -1,0 +1,19 @@
+# EMPTY == DEFAULT
+method: InstantUV
+experiment:
+  name: XATLAS CAT
+  split: cat
+  description: XATLAS Config for cat
+data:
+  raw_data_path: data/raw/cat_dataset_v2_tiny/
+  preproc_data_path: data/preprocessed/cat_dataset_v2_tiny/xatlas
+  mesh_path: data/raw/cat_rescaled_rotated/12221_Cat_v1_l3.obj
+
+preprocessing:
+  export_angles: false
+  export_coords3d: false
+
+  uv_backend: xatlas
+  uv_backend_options:
+    xatlas:
+      padding: 20

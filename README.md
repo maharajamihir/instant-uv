@@ -43,12 +43,18 @@ Tipp: Run the preprocessing with the [`nice`](https://man7.org/linux/man-pages/m
 
 
 ## Train model
-
+Using the preprocessed data you can train the model on eg. the human object by running
+```bash
+python src/model/train.py --config_path config/human/config_human.yaml
+```
 
 ## Visualize
+For now during training, for every eval step, all the views in the val data-split will be rendered into the render/ directory :)
 
 ## Run experiments
+### Note for using wandb:
 
+If `training>use_wandb` is set in (config.yaml) an .env file must be created in `src/.env` with WANDB_API_KEY=<<your-key>>
 
 # Notes
 ## Pipeline 

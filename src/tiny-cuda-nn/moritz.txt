@@ -1,0 +1,5 @@
+# Personal install which worked for me
+conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+
+pip install commentjson
+pip install imageio==2.16.2
