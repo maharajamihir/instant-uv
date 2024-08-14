@@ -1,4 +1,4 @@
-# Instant-UV: Fast Implicit Texture Learning for 2D Mesh Rendering
+# Instant-UV: Fast Implicit Texture Learning for Meshes
 ![Architecture](./arch-fig.png)
 
 # Abstract 
