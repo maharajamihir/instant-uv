@@ -1,17 +1,7 @@
 # InstantUV
 InstantUV: Fast Implicit Texture Learning for 2D Mesh Rendering
 
-Instant-NGP [2] was a breakthrough paper, significantly speeding up the learning and inference of
-implicit representations. Yet, as said in the lecture, despite the growth in implicit representations,
-meshes remain a preferred choice in many downstream applications. This is due to their intuitive
-editing capabilities and the existence of efficient algorithms. Representing neural fields (like texture
-(color)) on meshes still remains an open task. Storing texture on a mesh boils down to either storing
-it on the vertices and interpolating for the faces, storing one color per face, or storing it in an image
-using a UV map. We propose a novel method to store texture implicitly by unwrapping the mesh
-into an image using UV mapping and learning the stored texture in the image implicitly in 2D using
-Instant-NGP [2] (their gigapixel image part). Related work that learns texture on a mesh exists
-[3, 4, 1], but ours would be way more efficient, and it would be interesting to see if reducing the
-problem to a 2D learning task solves it more effectively.
+Multiresolution feature grid encodings have been shown to significantly accelerate neural representations due to the requirement of smaller MLPs. In this work, we introduce Instant-UV, a novel method for representing texture on meshes that blends multiresolution grid encodings with traditional UV mapping. We evaluate our method on the multi-view texture reconstruction task and show a speedup of over a magnitude to baseline methods while not dependent on the mesh resolution.
 
 # Work with InstantUV
 
@@ -19,7 +9,7 @@ problem to a 2D learning task solves it more effectively.
 
 ```bash
 # I have tested it with python=3.9, but might also work with newer version
-conda create -n instantuv python=3.9
+conda create -n instantuv python=3.10
 conda activate instantuv
 ```
 
@@ -43,7 +33,9 @@ Tipp: Run the preprocessing with the [`nice`](https://man7.org/linux/man-pages/m
 
 
 ## Train model
-
+```bash
+python src/model/train.py
+```
 
 ## Visualize
 
